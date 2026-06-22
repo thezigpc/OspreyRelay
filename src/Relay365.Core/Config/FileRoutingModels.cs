@@ -108,6 +108,11 @@ public class SuffixRule
     public string SmarthostOverridePasswordEncrypted { get; set; } = "";
     [JsonIgnore] public string SmarthostOverridePassword { get; set; } = "";
 
+    // Delivery address control — applies to EmailRelay and SmarthostRelay destinations
+    public bool StripSuffixFromTo { get; set; } = false;   // strip suffix segment: john@files.co → john@co
+    public string DeliverToOverride { get; set; } = "";     // explicit delivery address; takes priority over strip
+    public bool RewriteToHeader { get; set; } = false;      // SmarthostRelay only: also rewrite embedded To: header
+
     // V2 placeholder — subject-line sub-routing within this suffix rule
     // public List<SubjectRoutingRule> SubjectRules { get; set; } = new();
 }
@@ -157,6 +162,10 @@ public class RecipientFileRule
     public string SmarthostOverridePasswordEncrypted { get; set; } = "";
     [JsonIgnore] public string SmarthostOverridePassword { get; set; } = "";
 
+    // Delivery address control — applies to EmailRelay and SmarthostRelay destinations
+    public string DeliverToOverride { get; set; } = "";     // explicit delivery address; takes priority
+    public bool RewriteToHeader { get; set; } = false;      // SmarthostRelay only: also rewrite embedded To: header
+
     // V2 placeholder — subject-line sub-routing
     // public List<SubjectRoutingRule> SubjectRules { get; set; } = new();
 }
@@ -194,6 +203,13 @@ public class RouteDecision
 
     // Smarthost — null = use global config from RelayConfig; populated only for SmarthostRelay
     public SmarthostConfig? SmarthostOverride { get; init; }
+
+    // Delivery address override — null = use original MatchedToAddress
+    // Set by routing engine when StripSuffixFromTo or DeliverToOverride is active on a rule.
+    // GraphMailSender always rewrites mime.To when this is set; SmtpSmarthostSender uses it for
+    // RCPT TO and optionally the To: header (controlled by RewriteToHeader).
+    public string? DeliveryToAddress { get; init; }
+    public bool RewriteToHeader { get; init; }
 
     // Diagnostics
     public string MatchSource { get; init; } = "";

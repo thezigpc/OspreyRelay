@@ -51,9 +51,12 @@ public class GraphFileStorer
             mime = await MimeMessage.LoadAsync(ms, ct);
 
         var mimeFrom   = mime.From.Mailboxes.FirstOrDefault()?.Address ?? received.EnvelopeFrom;
-        var matchedTo  = string.IsNullOrWhiteSpace(decision.MatchedToAddress)
-                         ? (received.EnvelopeTo.FirstOrDefault() ?? "")
-                         : decision.MatchedToAddress;
+        // Use the effective delivery address for %to% so strip/override is reflected in paths.
+        var matchedTo  = !string.IsNullOrWhiteSpace(decision.DeliveryToAddress)
+                         ? decision.DeliveryToAddress
+                         : string.IsNullOrWhiteSpace(decision.MatchedToAddress)
+                             ? (received.EnvelopeTo.FirstOrDefault() ?? "")
+                             : decision.MatchedToAddress;
         var atFrom     = mimeFrom.IndexOf('@');
         var atTo       = matchedTo.IndexOf('@');
         var receivedAt = received.ReceivedAt;

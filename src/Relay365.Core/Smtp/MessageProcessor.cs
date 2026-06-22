@@ -112,9 +112,12 @@ public class MessageProcessor
                             "Smarthost route matched but no host is configured. " +
                             "Set a host on the rule or configure the global smarthost in Settings.");
 
-                    await new SmtpSmarthostSender(_configManager, _logger).SendAsync(email, shCfg, ct);
-                    _logger.Success($"Smarthost relay: {email.EnvelopeFrom} → " +
-                                    $"{string.Join(",", email.EnvelopeTo)} via {shCfg.Host}:{shCfg.Port}");
+                    await new SmtpSmarthostSender(_configManager, _logger).SendAsync(
+                        email, shCfg, ct,
+                        deliveryToAddress: decision.DeliveryToAddress,
+                        rewriteToHeader:   decision.RewriteToHeader);
+                    var effectiveTo = decision.DeliveryToAddress ?? string.Join(",", email.EnvelopeTo);
+                    _logger.Success($"Smarthost relay: {email.EnvelopeFrom} → {effectiveTo} via {shCfg.Host}:{shCfg.Port}");
                     break;
 
                 case FileDestinationType.OneDrive:

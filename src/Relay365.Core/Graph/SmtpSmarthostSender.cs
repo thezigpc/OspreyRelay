@@ -41,7 +41,13 @@ public class SmtpSmarthostSender
     }
 
     // ── Explicit config overload (rule-based and failover both end here) ──────
-    public async Task SendAsync(ReceivedEmail email, SmarthostConfig config, CancellationToken ct = default)
+    // deliveryToAddress: overrides the RCPT TO address(es); null = use email.EnvelopeTo as-is.
+    // rewriteToHeader: also rewrites the embedded To: header in the MIME message. Optional because
+    //   this may invalidate DKIM signatures on the original message (use with care).
+    public async Task SendAsync(
+        ReceivedEmail email, SmarthostConfig config,
+        CancellationToken ct = default,
+        string? deliveryToAddress = null, bool rewriteToHeader = false)
     {
         MimeMessage mime;
         using (var ms = new MemoryStream(email.RawData))
@@ -62,6 +68,14 @@ public class SmtpSmarthostSender
             envelopeFrom = config.FallbackSenderEmail;
         }
 
+        // Optionally rewrite the embedded To: header (caller opts in; may break DKIM).
+        if (rewriteToHeader && !string.IsNullOrWhiteSpace(deliveryToAddress))
+        {
+            mime.To.Clear();
+            mime.To.Add(new MailboxAddress(deliveryToAddress, deliveryToAddress));
+            _logger.Debug($"Rewrote To: header → {deliveryToAddress}");
+        }
+
         var socketOptions = config.Tls switch
         {
             SmarthostTls.SslTls   => SecureSocketOptions.SslOnConnect,
@@ -75,12 +89,17 @@ public class SmtpSmarthostSender
         if (!string.IsNullOrWhiteSpace(config.Username))
             await smtp.AuthenticateAsync(config.Username, config.Password, ct);
 
-        // Use explicit envelope addresses so SMTP MAIL FROM/RCPT TO match what was received.
-        var sender     = new MailboxAddress("", envelopeFrom);
-        var recipients = email.EnvelopeTo.Select(t => new MailboxAddress("", t));
+        // RCPT TO: use delivery override address if set, otherwise original envelope recipients.
+        var sender = new MailboxAddress("", envelopeFrom);
+        IEnumerable<string> rcptTo = !string.IsNullOrWhiteSpace(deliveryToAddress)
+            ? new[] { deliveryToAddress }
+            : email.EnvelopeTo;
+        var recipients = rcptTo.Select(t => new MailboxAddress("", t));
         await smtp.SendAsync(mime, sender, recipients, ct);
         await smtp.DisconnectAsync(true, ct);
 
-        _logger.Debug($"Smarthost delivered: {envelopeFrom} → {string.Join(",", email.EnvelopeTo)} via {config.Host}:{config.Port}");
+        var effectiveTo = !string.IsNullOrWhiteSpace(deliveryToAddress)
+            ? deliveryToAddress : string.Join(",", email.EnvelopeTo);
+        _logger.Debug($"Smarthost delivered: {envelopeFrom} → {effectiveTo} via {config.Host}:{config.Port}");
     }
 }

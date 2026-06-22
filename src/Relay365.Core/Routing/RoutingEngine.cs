@@ -205,20 +205,28 @@ public class RoutingEngine
     private static RouteDecision BuildExplicitDecision(
         RecipientFileRule rule, string toAddr, RelayConfig cfg)
     {
+        // Delivery address: explicit override takes priority; no strip for exact-match rules
+        string? deliveryTo = !string.IsNullOrWhiteSpace(rule.DeliverToOverride)
+            ? rule.DeliverToOverride : null;
+
         if (rule.DestinationType == FileDestinationType.EmailRelay)
             return new RouteDecision
             {
-                Type             = FileDestinationType.EmailRelay,
-                RelayVia         = rule.RelayVia,
-                MatchedToAddress = toAddr,
-                MatchSource      = $"ExplicitRule:{rule.ToAddress}"
+                Type              = FileDestinationType.EmailRelay,
+                RelayVia          = rule.RelayVia,
+                MatchedToAddress  = toAddr,
+                DeliveryToAddress = deliveryTo,
+                RewriteToHeader   = rule.RewriteToHeader,
+                MatchSource       = $"ExplicitRule:{rule.ToAddress}"
             };
 
         if (rule.DestinationType == FileDestinationType.SmarthostRelay)
             return new RouteDecision
             {
-                Type             = FileDestinationType.SmarthostRelay,
-                MatchedToAddress = toAddr,
+                Type              = FileDestinationType.SmarthostRelay,
+                MatchedToAddress  = toAddr,
+                DeliveryToAddress = deliveryTo,
+                RewriteToHeader   = rule.RewriteToHeader,
                 SmarthostOverride = rule.UseGlobalSmarthost ? null : new SmarthostConfig(
                     Host: rule.SmarthostOverrideHost, Port: rule.SmarthostOverridePort,
                     Tls: rule.SmarthostOverrideTls, Username: rule.SmarthostOverrideUsername,
@@ -248,12 +256,20 @@ public class RoutingEngine
     private static RouteDecision BuildSuffixDecision(
         SuffixRule rule, SuffixMatch match, RelayConfig cfg)
     {
+        // Delivery address: explicit override takes priority, then strip (uses already-resolved user),
+        // then null (leave original address unchanged).
+        string? deliveryTo = !string.IsNullOrWhiteSpace(rule.DeliverToOverride) ? rule.DeliverToOverride
+            : rule.StripSuffixFromTo ? match.ResolvedUser
+            : null;
+
         if (rule.DestinationType == FileDestinationType.SmarthostRelay)
             return new RouteDecision
             {
-                Type             = FileDestinationType.SmarthostRelay,
-                MatchedToAddress = match.MatchedToAddress,
-                ToBaseDomain     = rule.BaseDomain,
+                Type              = FileDestinationType.SmarthostRelay,
+                MatchedToAddress  = match.MatchedToAddress,
+                ToBaseDomain      = rule.BaseDomain,
+                DeliveryToAddress = deliveryTo,
+                RewriteToHeader   = rule.RewriteToHeader,
                 SmarthostOverride = rule.UseGlobalSmarthost ? null : new SmarthostConfig(
                     Host: rule.SmarthostOverrideHost, Port: rule.SmarthostOverridePort,
                     Tls: rule.SmarthostOverrideTls, Username: rule.SmarthostOverrideUsername,
@@ -278,7 +294,9 @@ public class RoutingEngine
             NoAttachmentBehavior = rule.NoAttachmentBehavior ?? cfg.DefaultNoAttachmentBehavior,
             FromSenderHandling   = rule.FromSenderHandling,
             MatchedToAddress     = match.MatchedToAddress,
-            ToBaseDomain         = rule.BaseDomain,  // %tobasedomain% populated from config only
+            ToBaseDomain         = rule.BaseDomain,
+            DeliveryToAddress    = deliveryTo,
+            RewriteToHeader      = rule.RewriteToHeader,
             FilenameTemplate     = rule.FilenameTemplate ?? cfg.DefaultFilenameTemplate,
             SubjectDelimiter     = rule.SubjectDelimiter ?? cfg.DefaultSubjectDelimiter,
             FilenameSpaceReplacement = rule.FilenameSpaceReplacement ?? cfg.FilenameSpaceReplacement,

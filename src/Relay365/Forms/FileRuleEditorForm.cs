@@ -83,6 +83,15 @@ public class FileRuleEditorForm : Form
     private TextBox _txtSmarthostUserOverride = null!;
     private TextBox _txtSmarthostPassOverride = null!;
 
+    // Delivery address override controls — relay panel
+    private CheckBox _chkStripSuffixRelay = null!;
+    private TextBox _txtDeliverToOverrideRelay = null!;
+
+    // Delivery address override controls — smarthost panel
+    private CheckBox _chkStripSuffixSmarthost = null!;
+    private TextBox _txtDeliverToOverrideSmarthost = null!;
+    private CheckBox _chkRewriteToHeader = null!;
+
     // Resolved SP data
     private string _resolvedSiteId = "";
     private List<(string Name, string DriveId)> _libraries = new();
@@ -202,9 +211,25 @@ public class FileRuleEditorForm : Form
         y += 30;
 
         // ── Relay destination ─────────────────────────────────────────────────
-        _pnlRelayDest = new Panel { Location = new Point(lx, y), Width = w, Height = 50 };
-        Lbl(_pnlRelayDest, "Send via mailbox (empty = passthrough):", 0, 0);
-        _txtRelayVia = Txt(_pnlRelayDest, 0, 18, 400);
+        _pnlRelayDest = new Panel { Location = new Point(lx, y), Width = w };
+        {
+            int ry = 0;
+            Lbl(_pnlRelayDest, "Send via mailbox  (empty = passthrough):", 0, ry); ry += 18;
+            _txtRelayVia = Txt(_pnlRelayDest, 0, ry, 400); ry += 30;
+            Sep(_pnlRelayDest, 0, ry, w - 20); ry += 12;
+            if (isSuffix)
+            {
+                _chkStripSuffixRelay = Chk(_pnlRelayDest,
+                    "Strip suffix segment from recipient address before delivery  (e.g. john@files.co → john@co)",
+                    0, ry);
+                ry += 24;
+            }
+            Lbl(_pnlRelayDest, "Override recipient address  (optional; takes priority over strip if set):", 0, ry); ry += 18;
+            _txtDeliverToOverrideRelay = Txt(_pnlRelayDest, 0, ry, 400,
+                placeholder: "e.g. support@company.com — leave blank to use original or stripped");
+            ry += 28;
+            _pnlRelayDest.Height = ry;
+        }
         _scroll.Controls.Add(_pnlRelayDest);
 
         // ── OneDrive destination ──────────────────────────────────────────────
@@ -437,6 +462,36 @@ public class FileRuleEditorForm : Form
         _pnlSmarthostDest.Controls.Add(_txtSmarthostPassOverride);
         y += 28;
 
+        Sep(_pnlSmarthostDest, 0, y, 570); y += 12;
+        if (_rdoSuffix.Checked)
+        {
+            _chkStripSuffixSmarthost = Chk(_pnlSmarthostDest,
+                "Strip suffix segment from recipient address before delivery  (e.g. john@files.co → john@co)",
+                0, y);
+            y += 24;
+        }
+        Lbl(_pnlSmarthostDest, "Override recipient address  (optional; takes priority over strip if set):", 0, y); y += 18;
+        _txtDeliverToOverrideSmarthost = Txt(_pnlSmarthostDest, 0, y, 380,
+            placeholder: "e.g. support@company.com — leave blank to use original or stripped");
+        y += 30;
+
+        _chkRewriteToHeader = new CheckBox
+        {
+            Text = "Also rewrite embedded To: header in message",
+            Location = new Point(0, y), AutoSize = true, Font = new Font("Segoe UI", 9)
+        };
+        _pnlSmarthostDest.Controls.Add(_chkRewriteToHeader);
+        y += 24;
+
+        var warnLabel = new Label
+        {
+            Text = "Warning: rewriting the To: header may invalidate DKIM signatures on the original message.",
+            Location = new Point(18, y), Width = 560, Height = 28, AutoSize = false,
+            ForeColor = Color.DarkGoldenrod, Font = new Font("Segoe UI", 8.5f)
+        };
+        _pnlSmarthostDest.Controls.Add(warnLabel);
+        y += 32;
+
         _pnlSmarthostDest.Height = y;
         UpdateSmarthostOverrideFields();
     }
@@ -489,7 +544,10 @@ public class FileRuleEditorForm : Form
                 smarthostPort: _editSuffix.SmarthostOverridePort,
                 smarthostTls: _editSuffix.SmarthostOverrideTls,
                 smarthostUser: _editSuffix.SmarthostOverrideUsername,
-                smarthostPass: _editSuffix.SmarthostOverridePassword);
+                smarthostPass: _editSuffix.SmarthostOverridePassword,
+                stripSuffixFromTo: _editSuffix.StripSuffixFromTo,
+                deliverToOverride: _editSuffix.DeliverToOverride,
+                rewriteToHeader: _editSuffix.RewriteToHeader);
         }
         else if (_editRecipient != null)
         {
@@ -514,7 +572,10 @@ public class FileRuleEditorForm : Form
                 smarthostPort: _editRecipient.SmarthostOverridePort,
                 smarthostTls: _editRecipient.SmarthostOverrideTls,
                 smarthostUser: _editRecipient.SmarthostOverrideUsername,
-                smarthostPass: _editRecipient.SmarthostOverridePassword);
+                smarthostPass: _editRecipient.SmarthostOverridePassword,
+                stripSuffixFromTo: false,
+                deliverToOverride: _editRecipient.DeliverToOverride,
+                rewriteToHeader: _editRecipient.RewriteToHeader);
         }
     }
 
@@ -527,7 +588,9 @@ public class FileRuleEditorForm : Form
         bool enabled,
         bool useGlobalSmarthost = true, string smarthostHost = "",
         int smarthostPort = 587, SmarthostTls smarthostTls = SmarthostTls.StartTls,
-        string smarthostUser = "", string smarthostPass = "")
+        string smarthostUser = "", string smarthostPass = "",
+        bool stripSuffixFromTo = false, string deliverToOverride = "",
+        bool rewriteToHeader = false)
     {
         _rdoTypeRelay.Checked      = type == FileDestinationType.EmailRelay;
         _rdoTypeOneDrive.Checked   = type == FileDestinationType.OneDrive;
@@ -541,6 +604,12 @@ public class FileRuleEditorForm : Form
         if (_cboSmarthostTlsOverride  != null) _cboSmarthostTlsOverride.SelectedIndex = (int)smarthostTls;
         if (_txtSmarthostUserOverride != null) _txtSmarthostUserOverride.Text = smarthostUser;
         if (_txtSmarthostPassOverride != null) _txtSmarthostPassOverride.Text = smarthostPass;
+
+        if (_chkStripSuffixRelay      != null) _chkStripSuffixRelay.Checked      = stripSuffixFromTo;
+        if (_txtDeliverToOverrideRelay != null) _txtDeliverToOverrideRelay.Text   = deliverToOverride;
+        if (_chkStripSuffixSmarthost   != null) _chkStripSuffixSmarthost.Checked  = stripSuffixFromTo;
+        if (_txtDeliverToOverrideSmarthost != null) _txtDeliverToOverrideSmarthost.Text = deliverToOverride;
+        if (_chkRewriteToHeader        != null) _chkRewriteToHeader.Checked       = rewriteToHeader;
 
         if (_txtRelayVia != null)     _txtRelayVia.Text     = relayVia;
         if (_txtOneDriveUser != null) _txtOneDriveUser.Text = oneDriveUser;
@@ -640,7 +709,7 @@ public class FileRuleEditorForm : Form
 
         foreach (Control c in _scroll.Controls)
         {
-            if (c == _pnlRelayDest || c == _pnlOneDriveDest || c == _pnlSpDest) continue;
+            if (c == _pnlRelayDest || c == _pnlOneDriveDest || c == _pnlSpDest || c == _pnlSmarthostDest) continue;
             if (c.Location.Y >= _overrideSectionStartY)
                 c.Location = new Point(c.Location.X, c.Location.Y + delta);
         }
@@ -818,6 +887,20 @@ public class FileRuleEditorForm : Form
             ? _txtSpFolderPath.Text.Trim()
             : _txtOneDrivePath.Text.Trim();
 
+        // Delivery address override fields — read from whichever active destination panel
+        bool stripSuffix = destType == FileDestinationType.EmailRelay
+            ? (_chkStripSuffixRelay?.Checked ?? false)
+            : destType == FileDestinationType.SmarthostRelay
+                ? (_chkStripSuffixSmarthost?.Checked ?? false)
+                : false;
+        string deliverToOverride = destType == FileDestinationType.EmailRelay
+            ? (_txtDeliverToOverrideRelay?.Text.Trim() ?? "")
+            : destType == FileDestinationType.SmarthostRelay
+                ? (_txtDeliverToOverrideSmarthost?.Text.Trim() ?? "")
+                : "";
+        bool rewriteToHeader = destType == FileDestinationType.SmarthostRelay
+            && (_chkRewriteToHeader?.Checked ?? false);
+
         if (_rdoSuffix.Checked)
         {
             var suffix = _txtSuffix?.Text.Trim() ?? "";
@@ -857,6 +940,9 @@ public class FileRuleEditorForm : Form
                 SmarthostOverrideTls       = (SmarthostTls)(_cboSmarthostTlsOverride?.SelectedIndex ?? 1),
                 SmarthostOverrideUsername  = _txtSmarthostUserOverride?.Text.Trim() ?? "",
                 SmarthostOverridePassword  = _txtSmarthostPassOverride?.Text ?? "",
+                StripSuffixFromTo          = stripSuffix,
+                DeliverToOverride          = deliverToOverride,
+                RewriteToHeader            = rewriteToHeader,
             };
         }
         else
@@ -892,6 +978,8 @@ public class FileRuleEditorForm : Form
                 SmarthostOverrideTls       = (SmarthostTls)(_cboSmarthostTlsOverride?.SelectedIndex ?? 1),
                 SmarthostOverrideUsername  = _txtSmarthostUserOverride?.Text.Trim() ?? "",
                 SmarthostOverridePassword  = _txtSmarthostPassOverride?.Text ?? "",
+                DeliverToOverride          = deliverToOverride,
+                RewriteToHeader            = rewriteToHeader,
             };
         }
 

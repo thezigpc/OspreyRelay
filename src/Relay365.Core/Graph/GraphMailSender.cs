@@ -63,6 +63,16 @@ public class GraphMailSender
         var originalFrom = string.IsNullOrWhiteSpace(mimeFrom) ? received.EnvelopeFrom : mimeFrom;
         var recips       = string.Join(", ", received.EnvelopeTo);
 
+        // When the routing rule specifies a delivery address override (strip suffix or explicit
+        // override), rewrite the mime.To header. Graph sendMail uses the To: header from the MIME
+        // to determine recipients, so this is required for correct delivery — not optional.
+        if (!string.IsNullOrWhiteSpace(decision.DeliveryToAddress))
+        {
+            mime.To.Clear();
+            mime.To.Add(new MailboxAddress(decision.DeliveryToAddress, decision.DeliveryToAddress));
+            _logger.Debug($"Rewrote To: header → {decision.DeliveryToAddress}");
+        }
+
         // Debug: show MIME structure so issues are diagnosable
         if (_logger.DebugMode)
         {
