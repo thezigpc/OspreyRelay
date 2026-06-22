@@ -113,6 +113,10 @@ public static class PathVariableResolver
         if (originalBase is not null)
             t = ReplaceInsensitive(t, "%originalbasefilename%", SanitizeValue(originalBase));
 
+        // Regex capture groups — named: %groupname%, numbered: %match1%, %match2%, etc.
+        foreach (var (key, value) in ctx.RegexCaptures)
+            t = ReplaceInsensitive(t, $"%{key}%", SanitizeValue(value));
+
         return t;
     }
 

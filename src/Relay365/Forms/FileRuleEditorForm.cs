@@ -1,3 +1,4 @@
+using System.Text.RegularExpressions;
 using Relay365.Core.Config;
 using Relay365.Core.Graph;
 using Relay365.Core.Logging;
@@ -5,33 +6,31 @@ using Relay365.Core.Logging;
 namespace Relay365.Forms;
 
 /// <summary>
-/// Editor for a single SuffixRule or RecipientFileRule.
-/// Opened from FileRoutingRulesForm for add and edit operations.
-/// The caller checks SuffixResult / RecipientResult after DialogResult.OK.
+/// Editor for a single RoutingRule. Opened from FileRoutingRulesForm for add and edit operations.
 /// </summary>
 public class FileRuleEditorForm : Form
 {
-    // ── Outputs ───────────────────────────────────────────────────────────────
-    public SuffixRule? SuffixResult { get; private set; }
-    public RecipientFileRule? RecipientResult { get; private set; }
+    // ── Output ────────────────────────────────────────────────────────────────
+    public RoutingRule? Result { get; private set; }
 
     // ── State ─────────────────────────────────────────────────────────────────
-    private readonly SuffixRule? _editSuffix;
-    private readonly RecipientFileRule? _editRecipient;
-    private readonly bool _isSuffixMode;
+    private readonly RoutingRule? _editRule;
     private readonly ConfigManager _configManager;
     private readonly RelayLogger _logger;
 
-    // ── Controls — rule type ──────────────────────────────────────────────────
-    private RadioButton _rdoSuffix = null!;
-    private RadioButton _rdoRecipient = null!;
+    // ── Match mode selector (fixed top) ───────────────────────────────────────
+    private ComboBox _cboMatchMode = null!;
 
-    // Suffix-specific
-    private TextBox _txtSuffix = null!;
-    private TextBox _txtBaseDomain = null!;
-
-    // Recipient-specific
-    private TextBox _txtToAddress = null!;
+    // ── Match section controls (rebuilt on mode change) ───────────────────────
+    // DomainSuffix
+    private TextBox? _txtSuffix;
+    private TextBox? _txtBaseDomain;
+    // ExactTo + all Regex modes
+    private TextBox? _txtPattern;
+    // Regex modes only
+    private CheckBox? _chkCaseInsensitive;
+    private TextBox? _txtTestInput;
+    private Label? _lblTestResult;
 
     // ── Destination type ──────────────────────────────────────────────────────
     private RadioButton _rdoTypeRelay = null!;
@@ -83,12 +82,12 @@ public class FileRuleEditorForm : Form
     private TextBox _txtSmarthostUserOverride = null!;
     private TextBox _txtSmarthostPassOverride = null!;
 
-    // Delivery address override controls — relay panel
-    private CheckBox _chkStripSuffixRelay = null!;
+    // Delivery address overrides — relay panel
+    private CheckBox? _chkStripSuffixRelay;
     private TextBox _txtDeliverToOverrideRelay = null!;
 
-    // Delivery address override controls — smarthost panel
-    private CheckBox _chkStripSuffixSmarthost = null!;
+    // Delivery address overrides — smarthost panel
+    private CheckBox? _chkStripSuffixSmarthost;
     private TextBox _txtDeliverToOverrideSmarthost = null!;
     private CheckBox _chkRewriteToHeader = null!;
 
@@ -97,16 +96,16 @@ public class FileRuleEditorForm : Form
     private List<(string Name, string DriveId)> _libraries = new();
     private List<(string DisplayName, string Url)> _siteSearchResults = new();
 
-    // Scroll container holds all scrollable content
+    // Scroll container
     private Panel _scroll = null!;
+    private int _destPanelY;
+    private int _lastOverrideY;
 
-    public FileRuleEditorForm(
-        SuffixRule? editSuffix, RecipientFileRule? editRecipient,
-        ConfigManager configManager, RelayLogger logger)
+    // ── Constructor ───────────────────────────────────────────────────────────
+
+    public FileRuleEditorForm(RoutingRule? editRule, ConfigManager configManager, RelayLogger logger)
     {
-        _editSuffix    = editSuffix;
-        _editRecipient = editRecipient;
-        _isSuffixMode  = editSuffix != null || editRecipient == null;
+        _editRule      = editRule;
         _configManager = configManager;
         _logger        = logger;
 
@@ -114,27 +113,54 @@ public class FileRuleEditorForm : Form
         PopulateFromEdit();
     }
 
+    private MatchMode CurrentMode => _cboMatchMode.SelectedIndex switch
+    {
+        0 => MatchMode.DomainSuffix,
+        1 => MatchMode.ExactTo,
+        2 => MatchMode.RegexTo,
+        3 => MatchMode.RegexFrom,
+        4 => MatchMode.RegexSubject,
+        _ => MatchMode.DomainSuffix
+    };
+
     private void InitializeComponent()
     {
-        Text = "File Rule Editor";
-        Size = new Size(680, 700);
-        MinimumSize = new Size(620, 580);
+        Text = "Rule Editor";
+        Size = new Size(700, 720);
+        MinimumSize = new Size(640, 580);
         FormBorderStyle = FormBorderStyle.Sizable;
         StartPosition = FormStartPosition.CenterParent;
         MaximizeBox = false;
 
-        // ── Rule type selector (fixed top) ────────────────────────────────────
-        var pnlType = new Panel
+        // ── Match mode selector (fixed top) ───────────────────────────────────
+        var pnlTop = new Panel
         {
-            Dock = DockStyle.Top, Height = 56,
+            Dock = DockStyle.Top, Height = 42,
             Padding = new Padding(10, 8, 10, 0),
             BackColor = Color.FromArgb(245, 245, 250)
         };
-        _rdoSuffix    = new RadioButton { Text = "Suffix rule  (match by To: domain pattern)", Location = new Point(8, 8), AutoSize = true, Checked = _isSuffixMode };
-        _rdoRecipient = new RadioButton { Text = "Recipient rule  (exact To: address match)", Location = new Point(8, 30), AutoSize = true, Checked = !_isSuffixMode };
-        _rdoSuffix.CheckedChanged    += (_, _) => RebuildScroll();
-        _rdoRecipient.CheckedChanged += (_, _) => RebuildScroll();
-        pnlType.Controls.AddRange(new Control[] { _rdoSuffix, _rdoRecipient });
+        var lblMode = new Label
+        {
+            Text = "Match mode:", Location = new Point(10, 12),
+            AutoSize = true, Font = new Font("Segoe UI", 9)
+        };
+        _cboMatchMode = new ComboBox
+        {
+            Location = new Point(102, 9), Width = 270,
+            DropDownStyle = ComboBoxStyle.DropDownList,
+            Font = new Font("Segoe UI", 9)
+        };
+        _cboMatchMode.Items.AddRange(new object[]
+        {
+            "Domain Suffix  (subdomain pattern)",
+            "Exact To:  (case-insensitive address)",
+            "Regex — To: address",
+            "Regex — From: address",
+            "Regex — Subject line"
+        });
+        _cboMatchMode.SelectedIndex = 0;
+        _cboMatchMode.SelectedIndexChanged += (_, _) => RebuildMatchSection();
+        pnlTop.Controls.AddRange(new Control[] { lblMode, _cboMatchMode });
 
         // ── Scrollable content ────────────────────────────────────────────────
         _scroll = new Panel { Dock = DockStyle.Fill, AutoScroll = true };
@@ -147,18 +173,14 @@ public class FileRuleEditorForm : Form
         btnCancel.Click += (_, _) => { DialogResult = DialogResult.Cancel; Close(); };
         btnVars.Click   += (_, _) => new VariablesHelpForm().ShowDialog(this);
         var pnlNav = new Panel { Dock = DockStyle.Fill, BackColor = Color.FromArgb(245, 245, 248) };
-        // Right-docked controls are added in reverse visual order (last added = rightmost)
         pnlNav.Controls.Add(btnSave);
         pnlNav.Controls.Add(btnCancel);
         pnlNav.Controls.Add(btnVars);
 
         var tlp = new TableLayoutPanel
         {
-            Dock = DockStyle.Fill,
-            RowCount = 2,
-            ColumnCount = 1,
-            Padding = new Padding(0),
-            Margin = new Padding(0),
+            Dock = DockStyle.Fill, RowCount = 2, ColumnCount = 1,
+            Padding = new Padding(0), Margin = new Padding(0),
             CellBorderStyle = TableLayoutPanelCellBorderStyle.None
         };
         tlp.RowStyles.Clear();
@@ -170,44 +192,21 @@ public class FileRuleEditorForm : Form
         tlp.Controls.Add(pnlNav, 0, 1);
 
         Controls.Add(tlp);
-        Controls.Add(pnlType);
+        Controls.Add(pnlTop);
 
         BuildScrollContent();
     }
 
-    // ── Build scrollable content (called once; rebuilt on mode switch) ─────────
+    // ── Build the full scroll content ─────────────────────────────────────────
 
     private void BuildScrollContent()
     {
         _scroll.Controls.Clear();
         int y = 8;
-        const int lx = 10; // left x for most controls
-        const int w  = 600; // standard width
+        const int lx = 10;
+        const int w  = 620;
 
-        bool isSuffix = _rdoSuffix.Checked;
-
-        // ── Rule-type-specific fields ─────────────────────────────────────────
-        if (isSuffix)
-        {
-            // Two fields side-by-side on one row
-            Lbl(_scroll, "Suffix segment  (blank or * = wildcard, captures any subdomain as %suffix%):", lx, y);
-            y += 18;
-            _txtSuffix    = Txt(_scroll, lx, y, 200);
-            Lbl(_scroll, "Base domain  (optional; blank = any domain):", lx + 220, y - 18);
-            _txtBaseDomain = Txt(_scroll, lx + 220, y, 260, placeholder: "e.g. company.com");
-            y += 26;
-            SLabel(_scroll,
-                "Example: suffix=files, domain=company.com matches jane@files.company.com\n" +
-                "Wildcard: suffix blank, domain=company.com matches any jane@X.company.com; captures X as %suffix%",
-                lx, ref y, 620);
-        }
-        else
-        {
-            Lbl(_scroll, "To: address  (exact match, case-insensitive):", lx, y);
-            y += 18;
-            _txtToAddress = Txt(_scroll, lx, y, 500, placeholder: "invoices@relay.local");
-            y += 26;
-        }
+        BuildMatchSection(lx, ref y, w);
 
         y += 8;
         Sep(_scroll, lx, y, w); y += 10;
@@ -225,42 +224,26 @@ public class FileRuleEditorForm : Form
         _rdoTypeSmarthost.CheckedChanged  += (_, _) => UpdateDestVisibility();
         y += 30;
 
-        // ── Relay destination ─────────────────────────────────────────────────
         _destPanelY = y;
+
+        // ── Relay destination ─────────────────────────────────────────────────
         _pnlRelayDest = new Panel { Location = new Point(lx, y), Width = w };
-        {
-            int ry = 0;
-            Lbl(_pnlRelayDest, "Send via mailbox  (empty = passthrough):", 0, ry); ry += 18;
-            _txtRelayVia = Txt(_pnlRelayDest, 0, ry, 400); ry += 30;
-            Sep(_pnlRelayDest, 0, ry, w - 20); ry += 12;
-            if (isSuffix)
-            {
-                _chkStripSuffixRelay = Chk(_pnlRelayDest,
-                    "Strip suffix segment from recipient address before delivery  (e.g. john@files.co → john@co)",
-                    0, ry);
-                ry += 24;
-            }
-            Lbl(_pnlRelayDest, "Override recipient address  (optional; takes priority over strip if set):", 0, ry); ry += 18;
-            _txtDeliverToOverrideRelay = Txt(_pnlRelayDest, 0, ry, 400,
-                placeholder: "e.g. support@company.com — leave blank to use original or stripped");
-            ry += 28;
-            _pnlRelayDest.Height = ry;
-        }
+        BuildRelayDestPanel();
         _scroll.Controls.Add(_pnlRelayDest);
 
         // ── OneDrive destination ──────────────────────────────────────────────
-        _pnlOneDriveDest = new Panel { Location = new Point(lx, y), Width = w, Height = 80, Visible = false };
+        _pnlOneDriveDest = new Panel { Location = new Point(lx, y), Width = w, Visible = false };
         Lbl(_pnlOneDriveDest, "User UPN  (blank = resolve from matched To: address):", 0, 0);
-        _txtOneDriveUser = Txt(_pnlOneDriveDest, 0, 18, 400,
-            placeholder: "e.g. user@company.com or leave blank for suffix rules");
+        _txtOneDriveUser = Txt(_pnlOneDriveDest, 0, 18, 420,
+            placeholder: "e.g. user@company.com");
         Lbl(_pnlOneDriveDest, "Folder path  (supports %variables%):", 0, 44);
-        _txtOneDrivePath = Txt(_pnlOneDriveDest, 0, 62, 500,
+        _txtOneDrivePath = Txt(_pnlOneDriveDest, 0, 62, 520,
             placeholder: "e.g. /Invoices/%date% or /%toupn%/%suffix%");
-        _pnlOneDriveDest.Height = 82;
+        _pnlOneDriveDest.Height = 84;
         _scroll.Controls.Add(_pnlOneDriveDest);
 
         // ── SharePoint destination ────────────────────────────────────────────
-        _pnlSpDest = new Panel { Location = new Point(lx, y), Width = w, Height = 10, Visible = false };
+        _pnlSpDest = new Panel { Location = new Point(lx, y), Width = w, Visible = false };
         BuildSharePointPanel();
         _scroll.Controls.Add(_pnlSpDest);
 
@@ -269,90 +252,277 @@ public class FileRuleEditorForm : Form
         BuildSmarthostDestPanel();
         _scroll.Controls.Add(_pnlSmarthostDest);
 
-        y += Math.Max(
-            _pnlRelayDest.Height,
-            Math.Max(_pnlOneDriveDest.Height,
-            Math.Max(_pnlSpDest.Height, _pnlSmarthostDest.Height))) + 8;
+        y += Math.Max(_pnlRelayDest.Height,
+             Math.Max(_pnlOneDriveDest.Height,
+             Math.Max(_pnlSpDest.Height, _pnlSmarthostDest.Height))) + 8;
 
-        // We'll position overrides below. Because SP panel height varies, we use
-        // a placeholder that gets updated in UpdateDestVisibility.
-        // For now, snap to the max. UpdateDestVisibility will reposition.
-        int overrideY = y;
+        _lastOverrideY = y;
 
-        Sep(_scroll, lx, overrideY, w); overrideY += 10;
-        BoldLabel(_scroll, "Per-rule overrides  (leave unchecked to use global defaults):", lx, overrideY);
-        overrideY += 26;
+        // ── Per-rule overrides ────────────────────────────────────────────────
+        Sep(_scroll, lx, y, w); y += 10;
+        BoldLabel(_scroll, "Per-rule overrides  (leave unchecked to use global defaults):", lx, y);
+        y += 26;
 
-        // Save What
-        _chkOverrideSaveWhat = Chk(_scroll, "Override save what:", lx, overrideY);
-        _cboSaveWhat = new ComboBox { Location = new Point(lx + 195, overrideY - 2), Width = 180, DropDownStyle = ComboBoxStyle.DropDownList, Font = new Font("Segoe UI", 9), Enabled = false };
+        _chkOverrideSaveWhat = Chk(_scroll, "Override save what:", lx, y);
+        _cboSaveWhat = new ComboBox { Location = new Point(lx + 195, y - 2), Width = 180, DropDownStyle = ComboBoxStyle.DropDownList, Font = new Font("Segoe UI", 9), Enabled = false };
         foreach (var v in Enum.GetNames<SaveWhat>()) _cboSaveWhat.Items.Add(v);
         _cboSaveWhat.SelectedIndex = 0;
         _chkOverrideSaveWhat.CheckedChanged += (_, _) => _cboSaveWhat.Enabled = _chkOverrideSaveWhat.Checked;
         _scroll.Controls.Add(_cboSaveWhat);
-        overrideY += 28;
+        y += 28;
 
-        // Per-email subfolder
-        _chkOverrideSubfolder = Chk(_scroll, "Override per-email subfolder:", lx, overrideY);
-        _chkSubfolderValue = new CheckBox { Text = "Enabled", Location = new Point(lx + 235, overrideY), AutoSize = true, Enabled = false };
+        _chkOverrideSubfolder = Chk(_scroll, "Override per-email subfolder:", lx, y);
+        _chkSubfolderValue = new CheckBox { Text = "Enabled", Location = new Point(lx + 235, y), AutoSize = true, Enabled = false };
         _chkOverrideSubfolder.CheckedChanged += (_, _) => _chkSubfolderValue.Enabled = _chkOverrideSubfolder.Checked;
         _scroll.Controls.Add(_chkSubfolderValue);
-        overrideY += 28;
+        y += 28;
 
-        // From: sender
-        _chkOverrideFromSender = Chk(_scroll, "Override From: sender handling:", lx, overrideY);
-        _cboFromSender = new ComboBox { Location = new Point(lx + 243, overrideY - 2), Width = 160, DropDownStyle = ComboBoxStyle.DropDownList, Font = new Font("Segoe UI", 9), Enabled = false };
+        _chkOverrideFromSender = Chk(_scroll, "Override From: sender handling:", lx, y);
+        _cboFromSender = new ComboBox { Location = new Point(lx + 243, y - 2), Width = 160, DropDownStyle = ComboBoxStyle.DropDownList, Font = new Font("Segoe UI", 9), Enabled = false };
         foreach (var v in Enum.GetNames<FromSenderHandling>()) _cboFromSender.Items.Add(v);
         _cboFromSender.SelectedIndex = 0;
         _chkOverrideFromSender.CheckedChanged += (_, _) => _cboFromSender.Enabled = _chkOverrideFromSender.Checked;
         _scroll.Controls.Add(_cboFromSender);
-        overrideY += 28;
+        y += 28;
 
-        // Filename template override
-        _chkOverrideFilenameTemplate = Chk(_scroll, "Override filename template:", lx, overrideY);
-        overrideY += 22;
+        _chkOverrideFilenameTemplate = Chk(_scroll, "Override filename template:", lx, y);
+        y += 22;
         _txtFilenameTemplate = new TextBox
         {
-            Location = new Point(lx, overrideY), Width = 540,
+            Location = new Point(lx, y), Width = 570,
             Font = new Font("Segoe UI", 9), Enabled = false,
             PlaceholderText = "e.g. %date%_%subject[0]%_%originalbasefilename%"
         };
         _chkOverrideFilenameTemplate.CheckedChanged += (_, _) => _txtFilenameTemplate.Enabled = _chkOverrideFilenameTemplate.Checked;
         _scroll.Controls.Add(_txtFilenameTemplate);
-        overrideY += 28;
+        y += 28;
 
-        // Subject delimiter override
-        _chkOverrideSubjectDelimiter = Chk(_scroll, "Override subject delimiter:", lx, overrideY);
+        _chkOverrideSubjectDelimiter = Chk(_scroll, "Override subject delimiter:", lx, y);
         _txtSubjectDelimiter = new TextBox
         {
-            Location = new Point(lx + 220, overrideY - 2), Width = 80,
+            Location = new Point(lx + 220, y - 2), Width = 80,
             Font = new Font("Segoe UI", 9), Enabled = false,
             PlaceholderText = "space"
         };
         _chkOverrideSubjectDelimiter.CheckedChanged += (_, _) => _txtSubjectDelimiter.Enabled = _chkOverrideSubjectDelimiter.Checked;
         _scroll.Controls.Add(_txtSubjectDelimiter);
-        overrideY += 28;
+        y += 28;
 
-        // Enabled checkbox
-        _chkEnabled = new CheckBox { Text = "Rule enabled", Location = new Point(lx, overrideY + 4), AutoSize = true, Checked = true };
+        _chkEnabled = new CheckBox { Text = "Rule enabled", Location = new Point(lx, y + 4), AutoSize = true, Checked = true };
         _scroll.Controls.Add(_chkEnabled);
-
-        // Store starting position for the override section so UpdateDestVisibility can reposition it
-        _overrideSectionStartY = y; // the y after destination panels
-        _lastOverrideY = y; // initialize so RepositionOverrides computes correct delta on first call
 
         UpdateDestVisibility();
     }
 
-    // y coordinate where override section begins (after the tallest destination panel)
-    private int _overrideSectionStartY;
+    // ── Match section (rebuilt when mode changes) ─────────────────────────────
+
+    private static readonly string[] _matchSectionTags = ["__matchsection__"];
+
+    private void BuildMatchSection(int lx, ref int y, int w)
+    {
+        // All match-section controls are tagged so RebuildMatchSection can find them
+        var mode = CurrentMode;
+
+        if (mode == MatchMode.DomainSuffix)
+        {
+            Lbl(_scroll, "Suffix segment  (blank or * = wildcard — captures any subdomain as %suffix%):", lx, y).Tag = "match";
+            y += 18;
+            _txtSuffix     = Txt(_scroll, lx, y, 200); _txtSuffix.Tag = "match";
+            Lbl(_scroll, "Base domain  (optional; blank = any domain):", lx + 220, y - 18).Tag = "match";
+            _txtBaseDomain = Txt(_scroll, lx + 220, y, 280, placeholder: "e.g. company.com"); _txtBaseDomain.Tag = "match";
+            y += 28;
+            var hint = new Label
+            {
+                Text = "Example: suffix=files, domain=company.com matches jane@files.company.com\n" +
+                       "Wildcard (suffix blank): domain=company.com matches any jane@X.company.com — captures X as %suffix%",
+                Location = new Point(lx, y), Width = w, Height = 34, AutoSize = false,
+                ForeColor = Color.DimGray, Font = new Font("Segoe UI", 8.5f), Tag = "match"
+            };
+            _scroll.Controls.Add(hint);
+            y += 36;
+        }
+        else if (mode == MatchMode.ExactTo)
+        {
+            Lbl(_scroll, "To: address  (exact match, case-insensitive):", lx, y).Tag = "match";
+            y += 18;
+            _txtPattern = Txt(_scroll, lx, y, 500, placeholder: "invoices@relay.local"); _txtPattern.Tag = "match";
+            y += 28;
+        }
+        else
+        {
+            var fieldLabel = mode switch
+            {
+                MatchMode.RegexFrom    => "From: address pattern  (matched against envelope From:):",
+                MatchMode.RegexSubject => "Subject pattern  (matched against message Subject: header):",
+                _                     => "To: address pattern  (matched against each envelope To:):"
+            };
+            Lbl(_scroll, fieldLabel, lx, y).Tag = "match";
+            y += 18;
+            _txtPattern = Txt(_scroll, lx, y, 480, placeholder: @"e.g. (?<type>INVOICE|PO)-(?<num>\d+)"); _txtPattern.Tag = "match";
+
+            var btnTest = new Button
+            {
+                Text = "Test…", Location = new Point(lx + 490, y - 1), Size = new Size(60, 24),
+                FlatStyle = FlatStyle.Flat, UseVisualStyleBackColor = true, Tag = "match"
+            };
+            btnTest.Click += (_, _) => RunPatternTest();
+            _scroll.Controls.Add(btnTest);
+            y += 28;
+
+            _chkCaseInsensitive = new CheckBox
+            {
+                Text = "Case-insensitive", Location = new Point(lx, y), AutoSize = true,
+                Checked = true, Font = new Font("Segoe UI", 9), Tag = "match"
+            };
+            _scroll.Controls.Add(_chkCaseInsensitive);
+            y += 24;
+
+            _txtTestInput = new TextBox
+            {
+                Location = new Point(lx, y), Width = 480,
+                Font = new Font("Segoe UI", 9),
+                PlaceholderText = "Sample input to test — then click Test…",
+                Tag = "match"
+            };
+            _scroll.Controls.Add(_txtTestInput);
+            y += 26;
+
+            _lblTestResult = new Label
+            {
+                Location = new Point(lx, y), Width = w, Height = 40, AutoSize = false,
+                Font = new Font("Segoe UI", 9), ForeColor = Color.DimGray, Tag = "match",
+                Text = "Enter a sample above and click Test… to see match result and captured variables."
+            };
+            _scroll.Controls.Add(_lblTestResult);
+            y += 44;
+
+            var hintRx = new Label
+            {
+                Text = "Named groups (?<name>...) become %name% in path templates. " +
+                       "Numbered groups become %match1%, %match2%, etc.",
+                Location = new Point(lx, y), Width = w, Height = 28, AutoSize = false,
+                ForeColor = Color.DimGray, Font = new Font("Segoe UI", 8.5f), Tag = "match"
+            };
+            _scroll.Controls.Add(hintRx);
+            y += 30;
+        }
+    }
+
+    private void RebuildMatchSection()
+    {
+        // Remove all tagged match-section controls
+        var toRemove = _scroll.Controls.Cast<Control>()
+            .Where(c => "match".Equals(c.Tag?.ToString()))
+            .ToList();
+
+        // Remember how many pixels the old match section occupied
+        int oldBottom = toRemove.Count > 0
+            ? toRemove.Max(c => c.Bottom) + 8
+            : 0;
+
+        foreach (var c in toRemove)
+            _scroll.Controls.Remove(c);
+
+        // Re-nullify mode-specific references
+        _txtSuffix = null; _txtBaseDomain = null;
+        _txtPattern = null; _chkCaseInsensitive = null;
+        _txtTestInput = null; _lblTestResult = null;
+
+        // Build new match section at the same top position
+        int startY = 8;
+        BuildMatchSection(10, ref startY, 620);
+        int newBottom = startY + 8; // +8 for the sep gap
+
+        // Shift all non-match controls by the delta
+        int delta = newBottom - oldBottom;
+        if (delta != 0)
+        {
+            foreach (Control c in _scroll.Controls)
+            {
+                if ("match".Equals(c.Tag?.ToString())) continue;
+                if (c.Location.Y >= oldBottom)
+                    c.Location = new Point(c.Location.X, c.Location.Y + delta);
+            }
+            // Update tracked Y references
+            _destPanelY   += delta;
+            _lastOverrideY += delta;
+            foreach (var pnl in new[] { _pnlRelayDest, _pnlOneDriveDest, _pnlSpDest, _pnlSmarthostDest })
+                if (pnl != null)
+                    pnl.Location = new Point(pnl.Location.X, pnl.Location.Y + delta);
+        }
+
+        // Rebuild strip-suffix checkbox visibility in relay/smarthost panels
+        // (only shown for DomainSuffix mode)
+        RebuildStripSuffixInRelayPanel();
+        RebuildStripSuffixInSmarthostPanel();
+    }
+
+    // ── Relay destination panel ───────────────────────────────────────────────
+
+    private void BuildRelayDestPanel()
+    {
+        int ry = 0;
+        Lbl(_pnlRelayDest, "Send via mailbox  (empty = passthrough):", 0, ry); ry += 18;
+        _txtRelayVia = Txt(_pnlRelayDest, 0, ry, 400); ry += 30;
+        Sep(_pnlRelayDest, 0, ry, 590); ry += 12;
+
+        _chkStripSuffixRelay = null;
+        if (CurrentMode == MatchMode.DomainSuffix)
+        {
+            _chkStripSuffixRelay = Chk(_pnlRelayDest,
+                "Strip suffix segment from recipient address before delivery  (e.g. john@files.co → john@co)",
+                0, ry);
+            _chkStripSuffixRelay.Tag = "striprow_relay";
+            ry += 24;
+        }
+
+        Lbl(_pnlRelayDest, "Override recipient address  (optional; takes priority over strip if set):", 0, ry); ry += 18;
+        _txtDeliverToOverrideRelay = Txt(_pnlRelayDest, 0, ry, 420,
+            placeholder: "e.g. support@company.com — leave blank to use original or stripped");
+        ry += 28;
+        _pnlRelayDest.Height = ry;
+    }
+
+    private void RebuildStripSuffixInRelayPanel()
+    {
+        if (_pnlRelayDest == null) return;
+        var existing = _pnlRelayDest.Controls.Cast<Control>()
+            .FirstOrDefault(c => "striprow_relay".Equals(c.Tag?.ToString()));
+        bool wantStrip = CurrentMode == MatchMode.DomainSuffix;
+
+        if (existing != null && !wantStrip)
+        {
+            // Shift subsequent controls up
+            int dy = existing.Height + 4;
+            foreach (Control c in _pnlRelayDest.Controls)
+                if (c.Location.Y > existing.Location.Y) c.Location = new Point(c.Location.X, c.Location.Y - dy);
+            _pnlRelayDest.Controls.Remove(existing);
+            _chkStripSuffixRelay = null;
+            _pnlRelayDest.Height -= dy;
+        }
+        else if (existing == null && wantStrip && _txtDeliverToOverrideRelay != null)
+        {
+            // Insert above the override address row
+            int insertY = _txtDeliverToOverrideRelay.Location.Y - 18 - 24; // label + field gap
+            _chkStripSuffixRelay = Chk(_pnlRelayDest,
+                "Strip suffix segment from recipient address before delivery  (e.g. john@files.co → john@co)",
+                0, insertY);
+            _chkStripSuffixRelay.Tag = "striprow_relay";
+            int dy = _chkStripSuffixRelay.Height + 4;
+            foreach (Control c in _pnlRelayDest.Controls)
+                if (c != _chkStripSuffixRelay && c.Location.Y >= insertY)
+                    c.Location = new Point(c.Location.X, c.Location.Y + dy);
+            _pnlRelayDest.Height += dy;
+        }
+    }
+
+    // ── SharePoint destination panel ──────────────────────────────────────────
 
     private void BuildSharePointPanel()
     {
         int y = 0;
-        const int w = 590;
+        const int w = 600;
 
-        // Search
         Lbl(_pnlSpDest, "Search SharePoint sites (blank = load all, up to 500):", 0, y); y += 18;
         _txtSiteSearch = new TextBox { Location = new Point(0, y), Width = 390, Font = new Font("Segoe UI", 9), PlaceholderText = "type keyword or leave blank" };
         _txtSiteSearch.KeyPress += (_, e) => { if (e.KeyChar == (char)Keys.Return) { e.Handled = true; _ = SearchSitesAsync(); } };
@@ -365,8 +535,7 @@ public class FileRuleEditorForm : Form
         {
             Location = new Point(0, y), Width = w,
             DropDownStyle = ComboBoxStyle.DropDownList,
-            Font = new Font("Segoe UI", 9),
-            DropDownWidth = w + 60
+            Font = new Font("Segoe UI", 9), DropDownWidth = w + 60
         };
         _cboSiteSearchResults.SelectedIndexChanged += (_, _) =>
         {
@@ -377,7 +546,6 @@ public class FileRuleEditorForm : Form
         _pnlSpDest.Controls.Add(_cboSiteSearchResults);
         y += 30;
 
-        // URL + resolve
         Lbl(_pnlSpDest, "SharePoint site URL:", 0, y); y += 18;
         _txtSiteUrl = new TextBox { Location = new Point(0, y), Width = 380, Font = new Font("Segoe UI", 9) };
         _btnResolveSite = new Button { Text = "Resolve / Load Libraries", Location = new Point(386, y - 1), Size = new Size(170, 24), FlatStyle = FlatStyle.Flat, UseVisualStyleBackColor = true };
@@ -389,7 +557,6 @@ public class FileRuleEditorForm : Form
         _pnlSpDest.Controls.Add(_lblSiteId);
         y += 20;
 
-        // Library
         Lbl(_pnlSpDest, "Document library:", 0, y); y += 18;
         _cboLibrary = new ComboBox { Location = new Point(0, y), Width = 300, DropDownStyle = ComboBoxStyle.DropDownList, Font = new Font("Segoe UI", 9) };
         _cboLibrary.SelectedIndexChanged += (_, _) => UpdateLibraryDriveId();
@@ -400,7 +567,6 @@ public class FileRuleEditorForm : Form
         _pnlSpDest.Controls.Add(_lblDriveId);
         y += 20;
 
-        // Folder path
         Lbl(_pnlSpDest, "Folder path within library  (supports %variables%):", 0, y); y += 18;
         _txtSpFolderPath = new TextBox
         {
@@ -414,6 +580,8 @@ public class FileRuleEditorForm : Form
 
         _pnlSpDest.Height = y;
     }
+
+    // ── Smarthost destination panel ───────────────────────────────────────────
 
     private void BuildSmarthostDestPanel()
     {
@@ -433,15 +601,14 @@ public class FileRuleEditorForm : Form
         {
             Text = "Mail matching this rule is always delivered via smarthost — not as a failover.\n" +
                    "Useful for departments or devices that must bypass Microsoft 365.",
-            Location = new Point(0, y), AutoSize = false, Width = 570, Height = 34,
+            Location = new Point(0, y), AutoSize = false, Width = 590, Height = 34,
             ForeColor = Color.DimGray, Font = new Font("Segoe UI", 8.5f)
         };
         _pnlSmarthostDest.Controls.Add(hint);
         y += 42;
 
         Lbl(_pnlSmarthostDest, "Host (IP or hostname):", 0, y); y += 18;
-        _txtSmarthostHostOverride = Txt(_pnlSmarthostDest, 0, y, 380,
-            placeholder: "e.g. relay.company.com  or  192.168.1.100");
+        _txtSmarthostHostOverride = Txt(_pnlSmarthostDest, 0, y, 380, placeholder: "e.g. relay.company.com  or  192.168.1.100");
         y += 28;
 
         Lbl(_pnlSmarthostDest, "Port:", 0, y);
@@ -457,8 +624,7 @@ public class FileRuleEditorForm : Form
         _cboSmarthostTlsOverride = new ComboBox
         {
             Location = new Point(110, y), Width = 160,
-            DropDownStyle = ComboBoxStyle.DropDownList,
-            Font = new Font("Segoe UI", 9)
+            DropDownStyle = ComboBoxStyle.DropDownList, Font = new Font("Segoe UI", 9)
         };
         _cboSmarthostTlsOverride.Items.AddRange(new object[] { "None", "STARTTLS (Recommended)", "SSL/TLS" });
         _cboSmarthostTlsOverride.SelectedIndex = 1;
@@ -473,22 +639,25 @@ public class FileRuleEditorForm : Form
         _txtSmarthostPassOverride = new TextBox
         {
             Location = new Point(0, y), Width = 340,
-            UseSystemPasswordChar = true,
-            Font = new Font("Segoe UI", 9)
+            UseSystemPasswordChar = true, Font = new Font("Segoe UI", 9)
         };
         _pnlSmarthostDest.Controls.Add(_txtSmarthostPassOverride);
         y += 28;
 
-        Sep(_pnlSmarthostDest, 0, y, 570); y += 12;
-        if (_rdoSuffix.Checked)
+        Sep(_pnlSmarthostDest, 0, y, 590); y += 12;
+
+        _chkStripSuffixSmarthost = null;
+        if (CurrentMode == MatchMode.DomainSuffix)
         {
             _chkStripSuffixSmarthost = Chk(_pnlSmarthostDest,
                 "Strip suffix segment from recipient address before delivery  (e.g. john@files.co → john@co)",
                 0, y);
+            _chkStripSuffixSmarthost.Tag = "striprow_smarthost";
             y += 24;
         }
+
         Lbl(_pnlSmarthostDest, "Override recipient address  (optional; takes priority over strip if set):", 0, y); y += 18;
-        _txtDeliverToOverrideSmarthost = Txt(_pnlSmarthostDest, 0, y, 380,
+        _txtDeliverToOverrideSmarthost = Txt(_pnlSmarthostDest, 0, y, 420,
             placeholder: "e.g. support@company.com — leave blank to use original or stripped");
         y += 30;
 
@@ -503,7 +672,7 @@ public class FileRuleEditorForm : Form
         var warnLabel = new Label
         {
             Text = "Warning: rewriting the To: header may invalidate DKIM signatures on the original message.",
-            Location = new Point(18, y), Width = 560, Height = 28, AutoSize = false,
+            Location = new Point(18, y), Width = 570, Height = 28, AutoSize = false,
             ForeColor = Color.DarkGoldenrod, Font = new Font("Segoe UI", 8.5f)
         };
         _pnlSmarthostDest.Controls.Add(warnLabel);
@@ -511,6 +680,37 @@ public class FileRuleEditorForm : Form
 
         _pnlSmarthostDest.Height = y;
         UpdateSmarthostOverrideFields();
+    }
+
+    private void RebuildStripSuffixInSmarthostPanel()
+    {
+        if (_pnlSmarthostDest == null) return;
+        var existing = _pnlSmarthostDest.Controls.Cast<Control>()
+            .FirstOrDefault(c => "striprow_smarthost".Equals(c.Tag?.ToString()));
+        bool wantStrip = CurrentMode == MatchMode.DomainSuffix;
+
+        if (existing != null && !wantStrip)
+        {
+            int dy = existing.Height + 4;
+            foreach (Control c in _pnlSmarthostDest.Controls)
+                if (c.Location.Y > existing.Location.Y) c.Location = new Point(c.Location.X, c.Location.Y - dy);
+            _pnlSmarthostDest.Controls.Remove(existing);
+            _chkStripSuffixSmarthost = null;
+            _pnlSmarthostDest.Height -= dy;
+        }
+        else if (existing == null && wantStrip && _txtDeliverToOverrideSmarthost != null)
+        {
+            int insertY = _txtDeliverToOverrideSmarthost.Location.Y - 18 - 24;
+            _chkStripSuffixSmarthost = Chk(_pnlSmarthostDest,
+                "Strip suffix segment from recipient address before delivery  (e.g. john@files.co → john@co)",
+                0, insertY);
+            _chkStripSuffixSmarthost.Tag = "striprow_smarthost";
+            int dy = _chkStripSuffixSmarthost.Height + 4;
+            foreach (Control c in _pnlSmarthostDest.Controls)
+                if (c != _chkStripSuffixSmarthost && c.Location.Y >= insertY)
+                    c.Location = new Point(c.Location.X, c.Location.Y + dy);
+            _pnlSmarthostDest.Height += dy;
+        }
     }
 
     private void UpdateSmarthostOverrideFields()
@@ -523,77 +723,102 @@ public class FileRuleEditorForm : Form
         if (_txtSmarthostPassOverride != null)  _txtSmarthostPassOverride.Enabled  = !useGlobal;
     }
 
-    // ── Rebuild on mode switch ────────────────────────────────────────────────
+    // ── Regex test ────────────────────────────────────────────────────────────
 
-    private void RebuildScroll()
+    private void RunPatternTest()
     {
-        // Cache values that are in shared controls before clearing
-        // (shared controls like destination type are recreated)
-        BuildScrollContent();
-        PopulateFromEdit();
+        if (_txtPattern == null || _txtTestInput == null || _lblTestResult == null) return;
+
+        var pattern = _txtPattern.Text.Trim();
+        var input   = _txtTestInput.Text;
+
+        if (string.IsNullOrEmpty(pattern))
+        {
+            _lblTestResult.Text      = "No pattern entered.";
+            _lblTestResult.ForeColor = Color.DimGray;
+            return;
+        }
+
+        try
+        {
+            var opts = RegexOptions.None;
+            if (_chkCaseInsensitive?.Checked ?? true) opts |= RegexOptions.IgnoreCase;
+            var m = Regex.Match(input, pattern, opts, TimeSpan.FromMilliseconds(500));
+
+            if (!m.Success)
+            {
+                _lblTestResult.Text      = "No match.";
+                _lblTestResult.ForeColor = Color.Firebrick;
+                return;
+            }
+
+            var sb = new System.Text.StringBuilder("Match");
+            // Named captures
+            foreach (Group g in m.Groups)
+            {
+                if (int.TryParse(g.Name, out _)) continue;
+                if (g.Success) sb.Append($"  %{g.Name}% = \"{g.Value}\"");
+            }
+            // Numbered groups
+            for (int i = 1; i < m.Groups.Count; i++)
+                if (m.Groups[i].Success) sb.Append($"  %match{i}% = \"{m.Groups[i].Value}\"");
+
+            _lblTestResult.Text      = sb.ToString();
+            _lblTestResult.ForeColor = Color.DarkGreen;
+        }
+        catch (ArgumentException ex)
+        {
+            _lblTestResult.Text      = $"Regex error: {ex.Message}";
+            _lblTestResult.ForeColor = Color.Firebrick;
+        }
     }
 
     // ── Populate from existing rule ───────────────────────────────────────────
 
     private void PopulateFromEdit()
     {
-        if (_editSuffix != null)
+        var r = _editRule;
+        if (r == null) return;
+
+        _cboMatchMode.SelectedIndex = r.Mode switch
         {
-            _rdoSuffix.Checked = true;
-            if (_txtSuffix != null) _txtSuffix.Text = _editSuffix.Suffix;
-            if (_txtBaseDomain != null) _txtBaseDomain.Text = _editSuffix.BaseDomain;
-            PopulateDestination(_editSuffix.DestinationType,
-                relayVia: "",
-                oneDriveUser: _editSuffix.OneDriveUser,
-                siteUrl: _editSuffix.SiteUrl,
-                siteId: _editSuffix.SiteId,
-                libName: _editSuffix.LibraryName,
-                driveId: _editSuffix.LibraryDriveId,
-                folderPath: _editSuffix.FolderPath,
-                useSubfolder: _editSuffix.UsePerEmailSubfolder,
-                saveWhat: _editSuffix.SaveWhat,
-                fromSender: _editSuffix.FromSenderHandling,
-                filenameTemplate: _editSuffix.FilenameTemplate,
-                subjectDelimiter: _editSuffix.SubjectDelimiter,
-                enabled: _editSuffix.Enabled,
-                useGlobalSmarthost: _editSuffix.UseGlobalSmarthost,
-                smarthostHost: _editSuffix.SmarthostOverrideHost,
-                smarthostPort: _editSuffix.SmarthostOverridePort,
-                smarthostTls: _editSuffix.SmarthostOverrideTls,
-                smarthostUser: _editSuffix.SmarthostOverrideUsername,
-                smarthostPass: _editSuffix.SmarthostOverridePassword,
-                stripSuffixFromTo: _editSuffix.StripSuffixFromTo,
-                deliverToOverride: _editSuffix.DeliverToOverride,
-                rewriteToHeader: _editSuffix.RewriteToHeader);
-        }
-        else if (_editRecipient != null)
-        {
-            _rdoRecipient.Checked = true;
-            if (_txtToAddress != null) _txtToAddress.Text = _editRecipient.ToAddress;
-            PopulateDestination(_editRecipient.DestinationType,
-                relayVia: _editRecipient.RelayVia,
-                oneDriveUser: _editRecipient.OneDriveUser,
-                siteUrl: _editRecipient.SiteUrl,
-                siteId: _editRecipient.SiteId,
-                libName: _editRecipient.LibraryName,
-                driveId: _editRecipient.LibraryDriveId,
-                folderPath: _editRecipient.FolderPath,
-                useSubfolder: _editRecipient.UsePerEmailSubfolder,
-                saveWhat: _editRecipient.SaveWhat,
-                fromSender: _editRecipient.FromSenderHandling,
-                filenameTemplate: _editRecipient.FilenameTemplate,
-                subjectDelimiter: _editRecipient.SubjectDelimiter,
-                enabled: _editRecipient.Enabled,
-                useGlobalSmarthost: _editRecipient.UseGlobalSmarthost,
-                smarthostHost: _editRecipient.SmarthostOverrideHost,
-                smarthostPort: _editRecipient.SmarthostOverridePort,
-                smarthostTls: _editRecipient.SmarthostOverrideTls,
-                smarthostUser: _editRecipient.SmarthostOverrideUsername,
-                smarthostPass: _editRecipient.SmarthostOverridePassword,
-                stripSuffixFromTo: false,
-                deliverToOverride: _editRecipient.DeliverToOverride,
-                rewriteToHeader: _editRecipient.RewriteToHeader);
-        }
+            MatchMode.ExactTo      => 1,
+            MatchMode.RegexTo      => 2,
+            MatchMode.RegexFrom    => 3,
+            MatchMode.RegexSubject => 4,
+            _                      => 0
+        };
+        // RebuildMatchSection is triggered by the SelectedIndexChanged above
+
+        if (_txtSuffix != null)    _txtSuffix.Text    = r.Suffix;
+        if (_txtBaseDomain != null) _txtBaseDomain.Text = r.BaseDomain;
+        if (_txtPattern != null)   _txtPattern.Text   = r.Pattern;
+        if (_chkCaseInsensitive != null) _chkCaseInsensitive.Checked = r.CaseInsensitive;
+
+        PopulateDestination(
+            type:               r.DestinationType,
+            relayVia:           r.RelayVia,
+            oneDriveUser:       r.OneDriveUser,
+            siteUrl:            r.SiteUrl,
+            siteId:             r.SiteId,
+            libName:            r.LibraryName,
+            driveId:            r.LibraryDriveId,
+            folderPath:         r.FolderPath,
+            useSubfolder:       r.UsePerEmailSubfolder,
+            saveWhat:           r.SaveWhat,
+            fromSender:         r.FromSenderHandling,
+            filenameTemplate:   r.FilenameTemplate,
+            subjectDelimiter:   r.SubjectDelimiter,
+            enabled:            r.Enabled,
+            useGlobalSmarthost: r.UseGlobalSmarthost,
+            smarthostHost:      r.SmarthostOverrideHost,
+            smarthostPort:      r.SmarthostOverridePort,
+            smarthostTls:       r.SmarthostOverrideTls,
+            smarthostUser:      r.SmarthostOverrideUsername,
+            smarthostPass:      r.SmarthostOverridePassword,
+            stripSuffixFromTo:  r.StripSuffixFromTo,
+            deliverToOverride:  r.DeliverToOverride,
+            rewriteToHeader:    r.RewriteToHeader);
     }
 
     private void PopulateDestination(
@@ -612,21 +837,20 @@ public class FileRuleEditorForm : Form
         _rdoTypeRelay.Checked      = type == FileDestinationType.EmailRelay;
         _rdoTypeOneDrive.Checked   = type == FileDestinationType.OneDrive;
         _rdoTypeSharePoint.Checked = type == FileDestinationType.SharePoint;
-        if (_rdoTypeSmarthost != null)
-            _rdoTypeSmarthost.Checked = type == FileDestinationType.SmarthostRelay;
+        _rdoTypeSmarthost.Checked  = type == FileDestinationType.SmarthostRelay;
 
-        if (_chkSmarthostUseGlobal != null) _chkSmarthostUseGlobal.Checked = useGlobalSmarthost;
-        if (_txtSmarthostHostOverride != null) _txtSmarthostHostOverride.Text = smarthostHost;
-        if (_nudSmarthostPortOverride != null) _nudSmarthostPortOverride.Value = Math.Clamp(smarthostPort, 1, 65535);
-        if (_cboSmarthostTlsOverride  != null) _cboSmarthostTlsOverride.SelectedIndex = (int)smarthostTls;
-        if (_txtSmarthostUserOverride != null) _txtSmarthostUserOverride.Text = smarthostUser;
-        if (_txtSmarthostPassOverride != null) _txtSmarthostPassOverride.Text = smarthostPass;
+        if (_chkSmarthostUseGlobal != null)     _chkSmarthostUseGlobal.Checked = useGlobalSmarthost;
+        if (_txtSmarthostHostOverride != null)   _txtSmarthostHostOverride.Text = smarthostHost;
+        if (_nudSmarthostPortOverride != null)   _nudSmarthostPortOverride.Value = Math.Clamp(smarthostPort, 1, 65535);
+        if (_cboSmarthostTlsOverride  != null)   _cboSmarthostTlsOverride.SelectedIndex = (int)smarthostTls;
+        if (_txtSmarthostUserOverride != null)   _txtSmarthostUserOverride.Text = smarthostUser;
+        if (_txtSmarthostPassOverride != null)   _txtSmarthostPassOverride.Text = smarthostPass;
 
-        if (_chkStripSuffixRelay      != null) _chkStripSuffixRelay.Checked      = stripSuffixFromTo;
-        if (_txtDeliverToOverrideRelay != null) _txtDeliverToOverrideRelay.Text   = deliverToOverride;
-        if (_chkStripSuffixSmarthost   != null) _chkStripSuffixSmarthost.Checked  = stripSuffixFromTo;
-        if (_txtDeliverToOverrideSmarthost != null) _txtDeliverToOverrideSmarthost.Text = deliverToOverride;
-        if (_chkRewriteToHeader        != null) _chkRewriteToHeader.Checked       = rewriteToHeader;
+        if (_chkStripSuffixRelay != null)           _chkStripSuffixRelay.Checked      = stripSuffixFromTo;
+        if (_txtDeliverToOverrideRelay != null)      _txtDeliverToOverrideRelay.Text   = deliverToOverride;
+        if (_chkStripSuffixSmarthost != null)        _chkStripSuffixSmarthost.Checked  = stripSuffixFromTo;
+        if (_txtDeliverToOverrideSmarthost != null)  _txtDeliverToOverrideSmarthost.Text = deliverToOverride;
+        if (_chkRewriteToHeader != null)             _chkRewriteToHeader.Checked       = rewriteToHeader;
 
         if (_txtRelayVia != null)     _txtRelayVia.Text     = relayVia;
         if (_txtOneDriveUser != null) _txtOneDriveUser.Text = oneDriveUser;
@@ -676,7 +900,7 @@ public class FileRuleEditorForm : Form
         UpdateDestVisibility();
     }
 
-    // ── Destination visibility + repositioning overrides ──────────────────────
+    // ── Destination visibility + override repositioning ───────────────────────
 
     private void UpdateDestVisibility()
     {
@@ -690,16 +914,14 @@ public class FileRuleEditorForm : Form
         if (_pnlSpDest       != null) _pnlSpDest.Visible       = isSp;
         if (_pnlSmarthostDest != null) _pnlSmarthostDest.Visible = isSmarthost;
 
-        // Reposition controls below the active destination panel
-        int activeHeight = isRelay     ? (_pnlRelayDest?.Height     ?? 50)
-                         : isOD       ? (_pnlOneDriveDest?.Height   ?? 80)
-                         : isSmarthost ? (_pnlSmarthostDest?.Height ?? 200)
-                                       : (_pnlSpDest?.Height        ?? 280);
+        int activeHeight = isRelay      ? (_pnlRelayDest?.Height     ?? 50)
+                         : isOD         ? (_pnlOneDriveDest?.Height   ?? 80)
+                         : isSmarthost  ? (_pnlSmarthostDest?.Height  ?? 200)
+                                        : (_pnlSpDest?.Height         ?? 280);
 
         int newY = _destPanelY + activeHeight + 8;
         RepositionOverrides(newY);
 
-        // Grey out file-storage-only overrides when Email Relay or Smarthost is the destination.
         bool fs = !isRelay && !isSmarthost;
         void SetPair(CheckBox? chk, Control? sub)
         {
@@ -722,16 +944,151 @@ public class FileRuleEditorForm : Form
 
         foreach (Control c in _scroll.Controls)
         {
-            if (c == _pnlRelayDest || c == _pnlOneDriveDest || c == _pnlSpDest || c == _pnlSmarthostDest) continue;
+            if (c == _pnlRelayDest || c == _pnlOneDriveDest ||
+                c == _pnlSpDest   || c == _pnlSmarthostDest) continue;
+            if ("match".Equals(c.Tag?.ToString())) continue;
             if (c.Location.Y >= prevY)
                 c.Location = new Point(c.Location.X, c.Location.Y + delta);
         }
     }
 
-    private int _lastOverrideY;
-    private int _destPanelY;
+    // ── Save ──────────────────────────────────────────────────────────────────
 
-    // ── Site search ───────────────────────────────────────────────────────────
+    private void SaveRule()
+    {
+        var mode = CurrentMode;
+
+        var destType = _rdoTypeOneDrive.Checked   ? FileDestinationType.OneDrive
+                     : _rdoTypeSharePoint.Checked ? FileDestinationType.SharePoint
+                     : _rdoTypeSmarthost.Checked  ? FileDestinationType.SmarthostRelay
+                                                  : FileDestinationType.EmailRelay;
+
+        bool? subfolder = _chkOverrideSubfolder.Checked ? _chkSubfolderValue.Checked : null;
+        SaveWhat? saveWhat = _chkOverrideSaveWhat.Checked
+            ? Enum.Parse<SaveWhat>(_cboSaveWhat.SelectedItem?.ToString() ?? "AttachmentsOnly")
+            : null;
+        FromSenderHandling fromSender = _chkOverrideFromSender.Checked
+            ? Enum.Parse<FromSenderHandling>(_cboFromSender.SelectedItem?.ToString() ?? "Ignore")
+            : FromSenderHandling.Ignore;
+        string? filenameTemplate = _chkOverrideFilenameTemplate.Checked
+            ? _txtFilenameTemplate.Text.Trim()
+            : null;
+        string? subjectDelimiter = _chkOverrideSubjectDelimiter.Checked
+            ? (string.IsNullOrEmpty(_txtSubjectDelimiter.Text) ? " " : _txtSubjectDelimiter.Text)
+            : null;
+
+        var libName    = _cboLibrary.SelectedItem?.ToString() ?? "";
+        var driveId    = GetSelectedDriveId();
+        var folderPath = destType == FileDestinationType.SharePoint
+            ? (_txtSpFolderPath?.Text.Trim() ?? "")
+            : (_txtOneDrivePath?.Text.Trim() ?? "");
+
+        bool stripSuffix = destType == FileDestinationType.EmailRelay
+            ? (_chkStripSuffixRelay?.Checked ?? false)
+            : destType == FileDestinationType.SmarthostRelay
+                ? (_chkStripSuffixSmarthost?.Checked ?? false)
+                : false;
+
+        string deliverToOverride = destType == FileDestinationType.EmailRelay
+            ? (_txtDeliverToOverrideRelay?.Text.Trim() ?? "")
+            : destType == FileDestinationType.SmarthostRelay
+                ? (_txtDeliverToOverrideSmarthost?.Text.Trim() ?? "")
+                : "";
+
+        bool rewriteToHeader = destType == FileDestinationType.SmarthostRelay
+            && (_chkRewriteToHeader?.Checked ?? false);
+
+        // ── Validate match section ────────────────────────────────────────────
+        if (mode == MatchMode.DomainSuffix)
+        {
+            var suffix = _txtSuffix?.Text.Trim() ?? "";
+            var baseDom = _txtBaseDomain?.Text.Trim() ?? "";
+            if (string.IsNullOrWhiteSpace(suffix) && string.IsNullOrWhiteSpace(baseDom))
+            {
+                MessageBox.Show(
+                    "Wildcard suffix rules require a Base Domain to avoid matching all traffic.\n" +
+                    "Please enter a Base Domain (e.g. company.com).",
+                    "Validation", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                return;
+            }
+        }
+        else
+        {
+            var pattern = _txtPattern?.Text.Trim() ?? "";
+            if (string.IsNullOrWhiteSpace(pattern))
+            {
+                MessageBox.Show(
+                    mode == MatchMode.ExactTo
+                        ? "To: address is required."
+                        : "Pattern is required.",
+                    "Validation", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                return;
+            }
+
+            if (mode != MatchMode.ExactTo)
+            {
+                // Validate regex
+                try
+                {
+                    _ = new Regex(pattern, RegexOptions.None, TimeSpan.FromMilliseconds(250));
+                }
+                catch (ArgumentException ex)
+                {
+                    MessageBox.Show($"Invalid regex pattern:\n{ex.Message}", "Validation",
+                        MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                    return;
+                }
+            }
+        }
+
+        Result = new RoutingRule
+        {
+            Id      = _editRule?.Id ?? Guid.NewGuid().ToString("N")[..8],
+            Enabled = _chkEnabled.Checked,
+            Mode    = mode,
+
+            // Match
+            Suffix          = _txtSuffix?.Text.Trim() ?? "",
+            BaseDomain      = _txtBaseDomain?.Text.Trim() ?? "",
+            Pattern         = _txtPattern?.Text.Trim() ?? "",
+            CaseInsensitive = _chkCaseInsensitive?.Checked ?? true,
+
+            // Destination
+            DestinationType = destType,
+            RelayVia        = _txtRelayVia?.Text.Trim() ?? "",
+            OneDriveUser    = _txtOneDriveUser?.Text.Trim() ?? "",
+            SiteUrl         = _txtSiteUrl?.Text.Trim() ?? "",
+            SiteId          = _resolvedSiteId,
+            LibraryName     = libName,
+            LibraryDriveId  = driveId,
+            FolderPath      = folderPath,
+
+            // Overrides
+            UsePerEmailSubfolder     = subfolder,
+            SaveWhat                 = saveWhat,
+            FromSenderHandling       = fromSender,
+            FilenameTemplate         = filenameTemplate,
+            SubjectDelimiter         = subjectDelimiter,
+
+            // Smarthost
+            UseGlobalSmarthost        = _chkSmarthostUseGlobal?.Checked ?? true,
+            SmarthostOverrideHost     = _txtSmarthostHostOverride?.Text.Trim() ?? "",
+            SmarthostOverridePort     = (int)(_nudSmarthostPortOverride?.Value ?? 587),
+            SmarthostOverrideTls      = (SmarthostTls)(_cboSmarthostTlsOverride?.SelectedIndex ?? 1),
+            SmarthostOverrideUsername = _txtSmarthostUserOverride?.Text.Trim() ?? "",
+            SmarthostOverridePassword = _txtSmarthostPassOverride?.Text ?? "",
+
+            // Delivery
+            StripSuffixFromTo = stripSuffix,
+            DeliverToOverride = deliverToOverride,
+            RewriteToHeader   = rewriteToHeader,
+        };
+
+        DialogResult = DialogResult.OK;
+        Close();
+    }
+
+    // ── SharePoint async helpers ──────────────────────────────────────────────
 
     private async Task SearchSitesAsync()
     {
@@ -741,12 +1098,10 @@ public class FileRuleEditorForm : Form
         {
             var mailSender = new GraphMailSender(_configManager, _logger);
             var fileStorer = new GraphFileStorer(_configManager, mailSender, _logger);
-
-            var query = _txtSiteSearch.Text.Trim();
+            var query      = _txtSiteSearch.Text.Trim();
             if (string.IsNullOrWhiteSpace(query)) query = "*";
 
             _siteSearchResults = await fileStorer.SearchSitesAsync(query, default);
-
             _cboSiteSearchResults.Items.Clear();
             if (_siteSearchResults.Count == 0)
             {
@@ -755,14 +1110,12 @@ public class FileRuleEditorForm : Form
             }
             foreach (var (name, url) in _siteSearchResults)
                 _cboSiteSearchResults.Items.Add($"{name}  ({url})");
-
             if (_siteSearchResults.Count == 1)
                 _cboSiteSearchResults.SelectedIndex = 0;
         }
         catch (Exception ex)
         {
-            MessageBox.Show($"Site search failed:\n{ex.Message}", "Error",
-                MessageBoxButtons.OK, MessageBoxIcon.Error);
+            MessageBox.Show($"Site search failed:\n{ex.Message}", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
         }
         finally
         {
@@ -771,29 +1124,22 @@ public class FileRuleEditorForm : Form
         }
     }
 
-    // ── Site resolution ───────────────────────────────────────────────────────
-
     private async Task ResolveSiteAsync()
     {
         if (string.IsNullOrWhiteSpace(_txtSiteUrl.Text))
         {
-            MessageBox.Show("Enter a SharePoint site URL first.", "Validation",
-                MessageBoxButtons.OK, MessageBoxIcon.Warning);
+            MessageBox.Show("Enter a SharePoint site URL first.", "Validation", MessageBoxButtons.OK, MessageBoxIcon.Warning);
             return;
         }
-
         _btnResolveSite.Enabled = false;
         _lblSiteId.Text = "Resolving…";
         Cursor = Cursors.WaitCursor;
-
         try
         {
             var mailSender = new GraphMailSender(_configManager, _logger);
             var fileStorer = new GraphFileStorer(_configManager, mailSender, _logger);
-
             _resolvedSiteId = await fileStorer.ResolveSiteIdAsync(_txtSiteUrl.Text.Trim(), default);
             _lblSiteId.Text = $"Site ID: {_resolvedSiteId}";
-
             _libraries = await fileStorer.GetLibrariesAsync(_resolvedSiteId, default);
             _cboLibrary.Items.Clear();
             foreach (var (name, _) in _libraries) _cboLibrary.Items.Add(name);
@@ -802,8 +1148,7 @@ public class FileRuleEditorForm : Form
         catch (Exception ex)
         {
             _lblSiteId.Text = "Resolution failed";
-            MessageBox.Show($"Could not resolve site:\n{ex.Message}", "Error",
-                MessageBoxButtons.OK, MessageBoxIcon.Error);
+            MessageBox.Show($"Could not resolve site:\n{ex.Message}", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
         }
         finally
         {
@@ -817,40 +1162,29 @@ public class FileRuleEditorForm : Form
         var driveId = GetSelectedDriveId();
         if (string.IsNullOrWhiteSpace(driveId))
         {
-            MessageBox.Show("Resolve the site and select a library first.", "Validation",
-                MessageBoxButtons.OK, MessageBoxIcon.Warning);
+            MessageBox.Show("Resolve the site and select a library first.", "Validation", MessageBoxButtons.OK, MessageBoxIcon.Warning);
             return;
         }
-
         _btnVerifyFolder.Enabled = false;
         Cursor = Cursors.WaitCursor;
-
         try
         {
             var mailSender = new GraphMailSender(_configManager, _logger);
             var fileStorer = new GraphFileStorer(_configManager, mailSender, _logger);
             var path = _txtSpFolderPath.Text.Trim();
-
             bool exists = await fileStorer.FolderExistsAsync(driveId, path, default);
             if (exists)
+                MessageBox.Show($"Folder '{path}' exists.", "Verified", MessageBoxButtons.OK, MessageBoxIcon.Information);
+            else if (MessageBox.Show($"Folder '{path}' does not exist. Create it now?",
+                "Folder Not Found", MessageBoxButtons.YesNo, MessageBoxIcon.Question) == DialogResult.Yes)
             {
-                MessageBox.Show($"Folder '{path}' exists.", "Verified",
-                    MessageBoxButtons.OK, MessageBoxIcon.Information);
-            }
-            else
-            {
-                if (MessageBox.Show($"Folder '{path}' does not exist. Create it now?",
-                    "Folder Not Found", MessageBoxButtons.YesNo, MessageBoxIcon.Question) == DialogResult.Yes)
-                {
-                    await fileStorer.EnsureFolderPathAsync(driveId, path, default);
-                    MessageBox.Show("Folder created.", "Done", MessageBoxButtons.OK, MessageBoxIcon.Information);
-                }
+                await fileStorer.EnsureFolderPathAsync(driveId, path, default);
+                MessageBox.Show("Folder created.", "Done", MessageBoxButtons.OK, MessageBoxIcon.Information);
             }
         }
         catch (Exception ex)
         {
-            MessageBox.Show($"Folder verification failed:\n{ex.Message}", "Error",
-                MessageBoxButtons.OK, MessageBoxIcon.Error);
+            MessageBox.Show($"Folder verification failed:\n{ex.Message}", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
         }
         finally
         {
@@ -872,142 +1206,14 @@ public class FileRuleEditorForm : Form
         return idx >= 0 && idx < _libraries.Count ? _libraries[idx].DriveId : "";
     }
 
-    // ── Save ──────────────────────────────────────────────────────────────────
-
-    private void SaveRule()
-    {
-        var destType = _rdoTypeOneDrive.Checked   ? FileDestinationType.OneDrive
-                     : _rdoTypeSharePoint.Checked ? FileDestinationType.SharePoint
-                     : _rdoTypeSmarthost.Checked  ? FileDestinationType.SmarthostRelay
-                                                  : FileDestinationType.EmailRelay;
-
-        bool? subfolder = _chkOverrideSubfolder.Checked ? _chkSubfolderValue.Checked : null;
-        SaveWhat? saveWhat = _chkOverrideSaveWhat.Checked
-            ? Enum.Parse<SaveWhat>(_cboSaveWhat.SelectedItem?.ToString() ?? "AttachmentsOnly")
-            : null;
-        FromSenderHandling fromSender = _chkOverrideFromSender.Checked
-            ? Enum.Parse<FromSenderHandling>(_cboFromSender.SelectedItem?.ToString() ?? "Ignore")
-            : FromSenderHandling.Ignore;
-        string? filenameTemplate = _chkOverrideFilenameTemplate.Checked
-            ? _txtFilenameTemplate.Text.Trim()
-            : null;
-        string? subjectDelimiter = _chkOverrideSubjectDelimiter.Checked
-            ? (string.IsNullOrEmpty(_txtSubjectDelimiter.Text) ? " " : _txtSubjectDelimiter.Text)
-            : null;
-
-        var libName  = _cboLibrary.SelectedItem?.ToString() ?? "";
-        var driveId  = GetSelectedDriveId();
-        var folderPath = destType == FileDestinationType.SharePoint
-            ? _txtSpFolderPath.Text.Trim()
-            : _txtOneDrivePath.Text.Trim();
-
-        // Delivery address override fields — read from whichever active destination panel
-        bool stripSuffix = destType == FileDestinationType.EmailRelay
-            ? (_chkStripSuffixRelay?.Checked ?? false)
-            : destType == FileDestinationType.SmarthostRelay
-                ? (_chkStripSuffixSmarthost?.Checked ?? false)
-                : false;
-        string deliverToOverride = destType == FileDestinationType.EmailRelay
-            ? (_txtDeliverToOverrideRelay?.Text.Trim() ?? "")
-            : destType == FileDestinationType.SmarthostRelay
-                ? (_txtDeliverToOverrideSmarthost?.Text.Trim() ?? "")
-                : "";
-        bool rewriteToHeader = destType == FileDestinationType.SmarthostRelay
-            && (_chkRewriteToHeader?.Checked ?? false);
-
-        if (_rdoSuffix.Checked)
-        {
-            var suffix = _txtSuffix?.Text.Trim() ?? "";
-            var base_  = _txtBaseDomain?.Text.Trim() ?? "";
-
-            // Both blank = too broad (would match everything)
-            if (string.IsNullOrWhiteSpace(suffix) && string.IsNullOrWhiteSpace(base_))
-            {
-                MessageBox.Show(
-                    "Wildcard suffix rules require a Base Domain to avoid matching all traffic.\n" +
-                    "Please enter a Base Domain (e.g. company.com).",
-                    "Validation", MessageBoxButtons.OK, MessageBoxIcon.Warning);
-                return;
-            }
-
-            SuffixResult = new SuffixRule
-            {
-                Id             = _editSuffix?.Id ?? Guid.NewGuid().ToString("N")[..8],
-                Suffix         = suffix,
-                BaseDomain     = base_,
-                Enabled        = _chkEnabled.Checked,
-                DestinationType = destType,
-                OneDriveUser   = _txtOneDriveUser?.Text.Trim() ?? "",
-                SiteUrl        = _txtSiteUrl?.Text.Trim() ?? "",
-                SiteId         = _resolvedSiteId,
-                LibraryName    = libName,
-                LibraryDriveId = driveId,
-                FolderPath     = folderPath,
-                UsePerEmailSubfolder = subfolder,
-                SaveWhat       = saveWhat,
-                FromSenderHandling = fromSender,
-                FilenameTemplate = filenameTemplate,
-                SubjectDelimiter = subjectDelimiter,
-                UseGlobalSmarthost         = _chkSmarthostUseGlobal?.Checked ?? true,
-                SmarthostOverrideHost      = _txtSmarthostHostOverride?.Text.Trim() ?? "",
-                SmarthostOverridePort      = (int)(_nudSmarthostPortOverride?.Value ?? 587),
-                SmarthostOverrideTls       = (SmarthostTls)(_cboSmarthostTlsOverride?.SelectedIndex ?? 1),
-                SmarthostOverrideUsername  = _txtSmarthostUserOverride?.Text.Trim() ?? "",
-                SmarthostOverridePassword  = _txtSmarthostPassOverride?.Text ?? "",
-                StripSuffixFromTo          = stripSuffix,
-                DeliverToOverride          = deliverToOverride,
-                RewriteToHeader            = rewriteToHeader,
-            };
-        }
-        else
-        {
-            if (string.IsNullOrWhiteSpace(_txtToAddress?.Text))
-            {
-                MessageBox.Show("To: address is required.", "Validation",
-                    MessageBoxButtons.OK, MessageBoxIcon.Warning);
-                return;
-            }
-
-            RecipientResult = new RecipientFileRule
-            {
-                Id             = _editRecipient?.Id ?? Guid.NewGuid().ToString("N")[..8],
-                ToAddress      = _txtToAddress!.Text.Trim(),
-                Enabled        = _chkEnabled.Checked,
-                DestinationType = destType,
-                RelayVia       = _txtRelayVia?.Text.Trim() ?? "",
-                OneDriveUser   = _txtOneDriveUser?.Text.Trim() ?? "",
-                SiteUrl        = _txtSiteUrl?.Text.Trim() ?? "",
-                SiteId         = _resolvedSiteId,
-                LibraryName    = libName,
-                LibraryDriveId = driveId,
-                FolderPath     = folderPath,
-                UsePerEmailSubfolder = subfolder,
-                SaveWhat       = saveWhat,
-                FromSenderHandling = fromSender,
-                FilenameTemplate = filenameTemplate,
-                SubjectDelimiter = subjectDelimiter,
-                UseGlobalSmarthost         = _chkSmarthostUseGlobal?.Checked ?? true,
-                SmarthostOverrideHost      = _txtSmarthostHostOverride?.Text.Trim() ?? "",
-                SmarthostOverridePort      = (int)(_nudSmarthostPortOverride?.Value ?? 587),
-                SmarthostOverrideTls       = (SmarthostTls)(_cboSmarthostTlsOverride?.SelectedIndex ?? 1),
-                SmarthostOverrideUsername  = _txtSmarthostUserOverride?.Text.Trim() ?? "",
-                SmarthostOverridePassword  = _txtSmarthostPassOverride?.Text ?? "",
-                DeliverToOverride          = deliverToOverride,
-                RewriteToHeader            = rewriteToHeader,
-            };
-        }
-
-        DialogResult = DialogResult.OK;
-        Close();
-    }
-
     // ── Layout helpers ────────────────────────────────────────────────────────
 
-    private static void Lbl(Control parent, string text, int x, int y, int width = 0)
+    private Label Lbl(Control parent, string text, int x, int y, int width = 0)
     {
         var lbl = new Label { Text = text, Location = new Point(x, y), AutoSize = width == 0, Font = new Font("Segoe UI", 9) };
         if (width > 0) { lbl.Width = width; lbl.AutoSize = false; }
         parent.Controls.Add(lbl);
+        return lbl;
     }
 
     private static void BoldLabel(Control parent, string text, int x, int y)
@@ -1019,24 +1225,12 @@ public class FileRuleEditorForm : Form
         });
     }
 
-    private static void SLabel(Control parent, string text, int x, ref int y, int width)
-    {
-        var lbl = new Label
-        {
-            Text = text, Location = new Point(x, y), Width = width, Height = 34,
-            AutoSize = false, ForeColor = Color.DimGray, Font = new Font("Segoe UI", 8.5f)
-        };
-        parent.Controls.Add(lbl);
-        y += 36;
-    }
-
-    private static TextBox Txt(Control parent, int x, int y, int width, string placeholder = "")
+    private TextBox Txt(Control parent, int x, int y, int width, string placeholder = "")
     {
         var tb = new TextBox
         {
             Location = new Point(x, y), Width = width,
-            Font = new Font("Segoe UI", 9),
-            PlaceholderText = placeholder
+            Font = new Font("Segoe UI", 9), PlaceholderText = placeholder
         };
         parent.Controls.Add(tb);
         return tb;

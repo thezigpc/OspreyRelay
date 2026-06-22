@@ -75,8 +75,10 @@ public class MainForm : Form
         Size = new Size(780, 560);
         MinimumSize = new Size(760, 440);
         StartPosition = FormStartPosition.CenterScreen;
-        var icoPath = Path.Combine(AppContext.BaseDirectory, "Resources", "app.ico");
-        if (File.Exists(icoPath)) Icon = new Icon(icoPath);
+        // Load the icon embedded in the exe via <ApplicationIcon> in the csproj.
+        // This works in all publish types (SCD, FDD) without requiring a separate Resources file.
+        var exeIcon = Icon.ExtractAssociatedIcon(Application.ExecutablePath);
+        if (exeIcon != null) Icon = exeIcon;
 
         // ── Status bar (top) ───────────────────────────────────────────────
         _pnlStatusBar = new Panel
@@ -233,7 +235,7 @@ public class MainForm : Form
         // ── System tray ─────────────────────────────────────────────────────
         _trayIcon = new NotifyIcon
         {
-            Icon = File.Exists(icoPath) ? new Icon(icoPath, 16, 16) : SystemIcons.Application,
+            Icon = exeIcon != null ? new Icon(exeIcon, 16, 16) : SystemIcons.Application,
             Text = "Osprey Relay for M365",
             Visible = true
         };

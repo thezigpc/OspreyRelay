@@ -58,81 +58,51 @@ public enum UnroutedAction
     EmailAsAttachment       // send as attachment via Graph; falls back to local on failure
 }
 
-// ── Rule models ───────────────────────────────────────────────────────────────
+// ── Match mode ────────────────────────────────────────────────────────────────
 
 /// <summary>
-/// Suffix-based routing.
-/// When Suffix is blank or "*", acts as a wildcard: matches any single subdomain segment
-/// and captures it as %suffix% in path/filename templates.
-/// When Suffix is set, matches only that exact segment.
-/// BaseDomain is optional; blank = match any domain containing the suffix segment.
-/// For SharePoint destinations the path template is applied to a shared library
-/// (use %suffix%, %toupn%, %from% etc. to build per-email folder structure).
+/// Determines how a RoutingRule matches an incoming email.
 /// </summary>
-public class SuffixRule
+public enum MatchMode
 {
-    public string Id { get; set; } = Guid.NewGuid().ToString("N")[..8];
-    public string Suffix { get; set; } = "";       // blank/"*" = wildcard capture
-    public string BaseDomain { get; set; } = "";   // blank = any domain; populates %tobasedomain%
-    public bool Enabled { get; set; } = true;
-
-    public FileDestinationType DestinationType { get; set; } = FileDestinationType.OneDrive;
-
-    // OneDrive: explicit UPN; blank = resolve from matched address
-    public string OneDriveUser { get; set; } = "";
-
-    // SharePoint
-    public string SiteUrl { get; set; } = "";
-    public string SiteId { get; set; } = "";
-    public string LibraryName { get; set; } = "";
-    public string LibraryDriveId { get; set; } = "";
-
-    // Common to OneDrive + SharePoint — supports path variables
-    public string FolderPath { get; set; } = "/%toupn%";
-
-    // Per-rule overrides — null means use the global default
-    public bool? UsePerEmailSubfolder { get; set; }
-    public SaveWhat? SaveWhat { get; set; }
-    public NoAttachmentBehavior? NoAttachmentBehavior { get; set; }
-    public FromSenderHandling FromSenderHandling { get; set; } = FromSenderHandling.Ignore;
-    public string? FilenameTemplate { get; set; }          // null = use global default
-    public string? SubjectDelimiter { get; set; }          // null = use global default
-    public string? FilenameSpaceReplacement { get; set; }  // null = use global default
-
-    // Smarthost routing — only used when DestinationType = SmarthostRelay
-    public bool UseGlobalSmarthost { get; set; } = true;
-    public string SmarthostOverrideHost { get; set; } = "";
-    public int SmarthostOverridePort { get; set; } = 587;
-    public SmarthostTls SmarthostOverrideTls { get; set; } = SmarthostTls.StartTls;
-    public string SmarthostOverrideUsername { get; set; } = "";
-    public string SmarthostOverridePasswordEncrypted { get; set; } = "";
-    [JsonIgnore] public string SmarthostOverridePassword { get; set; } = "";
-
-    // Delivery address control — applies to EmailRelay and SmarthostRelay destinations
-    public bool StripSuffixFromTo { get; set; } = false;   // strip suffix segment: john@files.co → john@co
-    public string DeliverToOverride { get; set; } = "";     // explicit delivery address; takes priority over strip
-    public bool RewriteToHeader { get; set; } = false;      // SmarthostRelay only: also rewrite embedded To: header
-
-    // V2 placeholder — subject-line sub-routing within this suffix rule
-    // public List<SubjectRoutingRule> SubjectRules { get; set; } = new();
+    DomainSuffix,   // subdomain-segment match on To: (was SuffixRule)
+    ExactTo,        // case-insensitive exact match on To: envelope address (was RecipientFileRule)
+    RegexTo,        // regex match on To: envelope address
+    RegexFrom,      // regex match on From: envelope address
+    RegexSubject    // regex match on Subject: header
 }
 
+// ── Unified rule model ────────────────────────────────────────────────────────
+
 /// <summary>
-/// Explicit recipient rule: exact match on a To: envelope address.
-/// Takes priority over suffix rules and SenderRoutes.
+/// A single routing rule. Replaces the separate SuffixRule and RecipientFileRule types.
+/// Match behaviour is determined by Mode; destination fields are common to all modes.
 /// </summary>
-public class RecipientFileRule
+public class RoutingRule
 {
     public string Id { get; set; } = Guid.NewGuid().ToString("N")[..8];
-    public string ToAddress { get; set; } = "";    // exact match (case-insensitive)
     public bool Enabled { get; set; } = true;
 
+    // ── Match ─────────────────────────────────────────────────────────────────
+    public MatchMode Mode { get; set; } = MatchMode.DomainSuffix;
+
+    // DomainSuffix: subdomain segment + optional base domain
+    public string Suffix { get; set; } = "";       // blank/"*" = wildcard capture
+    public string BaseDomain { get; set; } = "";   // blank = any domain
+
+    // ExactTo: exact address (case-insensitive). RegexTo/From/Subject: the regex pattern.
+    public string Pattern { get; set; } = "";
+
+    // Regex modes only
+    public bool CaseInsensitive { get; set; } = true;
+
+    // ── Destination ───────────────────────────────────────────────────────────
     public FileDestinationType DestinationType { get; set; } = FileDestinationType.EmailRelay;
 
     // EmailRelay: optional override mailbox — empty = passthrough
     public string RelayVia { get; set; } = "";
 
-    // OneDrive: explicit user UPN — empty = resolve from address
+    // OneDrive: explicit user UPN — empty = resolve from matched To: address
     public string OneDriveUser { get; set; } = "";
 
     // SharePoint
@@ -149,11 +119,11 @@ public class RecipientFileRule
     public SaveWhat? SaveWhat { get; set; }
     public NoAttachmentBehavior? NoAttachmentBehavior { get; set; }
     public FromSenderHandling FromSenderHandling { get; set; } = FromSenderHandling.Ignore;
-    public string? FilenameTemplate { get; set; }          // null = use global default
-    public string? SubjectDelimiter { get; set; }          // null = use global default
-    public string? FilenameSpaceReplacement { get; set; }  // null = use global default
+    public string? FilenameTemplate { get; set; }
+    public string? SubjectDelimiter { get; set; }
+    public string? FilenameSpaceReplacement { get; set; }
 
-    // Smarthost routing — only used when DestinationType = SmarthostRelay
+    // Smarthost — only used when DestinationType = SmarthostRelay
     public bool UseGlobalSmarthost { get; set; } = true;
     public string SmarthostOverrideHost { get; set; } = "";
     public int SmarthostOverridePort { get; set; } = 587;
@@ -162,12 +132,77 @@ public class RecipientFileRule
     public string SmarthostOverridePasswordEncrypted { get; set; } = "";
     [JsonIgnore] public string SmarthostOverridePassword { get; set; } = "";
 
-    // Delivery address control — applies to EmailRelay and SmarthostRelay destinations
-    public string DeliverToOverride { get; set; } = "";     // explicit delivery address; takes priority
-    public bool RewriteToHeader { get; set; } = false;      // SmarthostRelay only: also rewrite embedded To: header
+    // Delivery address control — EmailRelay and SmarthostRelay destinations
+    public bool StripSuffixFromTo { get; set; } = false;  // DomainSuffix only: strip suffix segment
+    public string DeliverToOverride { get; set; } = "";    // explicit delivery address; overrides strip
+    public bool RewriteToHeader { get; set; } = false;     // SmarthostRelay only: rewrite embedded To: header
+}
 
-    // V2 placeholder — subject-line sub-routing
-    // public List<SubjectRoutingRule> SubjectRules { get; set; } = new();
+// ── Legacy rule models (migration read only — not used by new code) ────────────
+
+/// <summary>Retained for deserialising config files written by v0.1.3 and earlier.</summary>
+public class SuffixRule
+{
+    public string Id { get; set; } = Guid.NewGuid().ToString("N")[..8];
+    public string Suffix { get; set; } = "";
+    public string BaseDomain { get; set; } = "";
+    public bool Enabled { get; set; } = true;
+    public FileDestinationType DestinationType { get; set; } = FileDestinationType.OneDrive;
+    public string OneDriveUser { get; set; } = "";
+    public string SiteUrl { get; set; } = "";
+    public string SiteId { get; set; } = "";
+    public string LibraryName { get; set; } = "";
+    public string LibraryDriveId { get; set; } = "";
+    public string FolderPath { get; set; } = "/%toupn%";
+    public bool? UsePerEmailSubfolder { get; set; }
+    public SaveWhat? SaveWhat { get; set; }
+    public NoAttachmentBehavior? NoAttachmentBehavior { get; set; }
+    public FromSenderHandling FromSenderHandling { get; set; } = FromSenderHandling.Ignore;
+    public string? FilenameTemplate { get; set; }
+    public string? SubjectDelimiter { get; set; }
+    public string? FilenameSpaceReplacement { get; set; }
+    public bool UseGlobalSmarthost { get; set; } = true;
+    public string SmarthostOverrideHost { get; set; } = "";
+    public int SmarthostOverridePort { get; set; } = 587;
+    public SmarthostTls SmarthostOverrideTls { get; set; } = SmarthostTls.StartTls;
+    public string SmarthostOverrideUsername { get; set; } = "";
+    public string SmarthostOverridePasswordEncrypted { get; set; } = "";
+    [JsonIgnore] public string SmarthostOverridePassword { get; set; } = "";
+    public bool StripSuffixFromTo { get; set; } = false;
+    public string DeliverToOverride { get; set; } = "";
+    public bool RewriteToHeader { get; set; } = false;
+}
+
+/// <summary>Retained for deserialising config files written by v0.1.3 and earlier.</summary>
+public class RecipientFileRule
+{
+    public string Id { get; set; } = Guid.NewGuid().ToString("N")[..8];
+    public string ToAddress { get; set; } = "";
+    public bool Enabled { get; set; } = true;
+    public FileDestinationType DestinationType { get; set; } = FileDestinationType.EmailRelay;
+    public string RelayVia { get; set; } = "";
+    public string OneDriveUser { get; set; } = "";
+    public string SiteUrl { get; set; } = "";
+    public string SiteId { get; set; } = "";
+    public string LibraryName { get; set; } = "";
+    public string LibraryDriveId { get; set; } = "";
+    public string FolderPath { get; set; } = "";
+    public bool? UsePerEmailSubfolder { get; set; }
+    public SaveWhat? SaveWhat { get; set; }
+    public NoAttachmentBehavior? NoAttachmentBehavior { get; set; }
+    public FromSenderHandling FromSenderHandling { get; set; } = FromSenderHandling.Ignore;
+    public string? FilenameTemplate { get; set; }
+    public string? SubjectDelimiter { get; set; }
+    public string? FilenameSpaceReplacement { get; set; }
+    public bool UseGlobalSmarthost { get; set; } = true;
+    public string SmarthostOverrideHost { get; set; } = "";
+    public int SmarthostOverridePort { get; set; } = 587;
+    public SmarthostTls SmarthostOverrideTls { get; set; } = SmarthostTls.StartTls;
+    public string SmarthostOverrideUsername { get; set; } = "";
+    public string SmarthostOverridePasswordEncrypted { get; set; } = "";
+    [JsonIgnore] public string SmarthostOverridePassword { get; set; } = "";
+    public string DeliverToOverride { get; set; } = "";
+    public bool RewriteToHeader { get; set; } = false;
 }
 
 // ── Runtime routing result (not persisted) ────────────────────────────────────
@@ -195,19 +230,20 @@ public class RouteDecision
     public FromSenderHandling FromSenderHandling { get; init; } = FromSenderHandling.Ignore;
 
     // Path/filename variable context
-    public string MatchedToAddress { get; init; } = "";   // exact To: address that matched
-    public string FilenameTemplate { get; init; } = "";   // resolved: rule override or global default
-    public string SubjectDelimiter { get; init; } = " ";  // resolved: rule override or global default
-    public string FilenameSpaceReplacement { get; init; } = ""; // resolved: rule override or global default
-    public string ToBaseDomain { get; init; } = "";       // SuffixRule.BaseDomain; empty for non-suffix routes
+    public string MatchedToAddress { get; init; } = "";   // To: address that matched
+    public string FilenameTemplate { get; init; } = "";
+    public string SubjectDelimiter { get; init; } = " ";
+    public string FilenameSpaceReplacement { get; init; } = "";
+    public string ToBaseDomain { get; init; } = "";       // DomainSuffix only
+    public string CapturedSuffix { get; init; } = "";     // DomainSuffix only
 
-    // Smarthost — null = use global config from RelayConfig; populated only for SmarthostRelay
+    // Regex capture groups — named groups keyed by name, numbered groups keyed as "match1", "match2" etc.
+    public Dictionary<string, string> RegexCaptures { get; init; } = new();
+
+    // Smarthost — null = use global config; populated for SmarthostRelay rules with override
     public SmarthostConfig? SmarthostOverride { get; init; }
 
-    // Delivery address override — null = use original MatchedToAddress
-    // Set by routing engine when StripSuffixFromTo or DeliverToOverride is active on a rule.
-    // GraphMailSender always rewrites mime.To when this is set; SmtpSmarthostSender uses it for
-    // RCPT TO and optionally the To: header (controlled by RewriteToHeader).
+    // Delivery address override
     public string? DeliveryToAddress { get; init; }
     public bool RewriteToHeader { get; init; }
 

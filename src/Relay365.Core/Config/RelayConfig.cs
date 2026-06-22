@@ -65,7 +65,12 @@ public class RelayConfig
     public int UnroutedLocalRetentionDays { get; set; } = 30;
 
     // ── Routing rule tables ───────────────────────────────────────────────────
+    /// <summary>Unified routing rules (v0.1.4+). Evaluated top-to-bottom; first match wins.</summary>
+    public List<RoutingRule> Rules { get; set; } = new();
+
+    /// <summary>Legacy — read only for migration from v0.1.3 and earlier configs.</summary>
     public List<SuffixRule> SuffixRules { get; set; } = new();
+    /// <summary>Legacy — read only for migration from v0.1.3 and earlier configs.</summary>
     public List<RecipientFileRule> FileRules { get; set; } = new();
 
     // ── Diagnostics ───────────────────────────────────────────────────────────

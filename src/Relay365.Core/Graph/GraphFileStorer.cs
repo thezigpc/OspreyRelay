@@ -64,17 +64,18 @@ public class GraphFileStorer
         // Build variable context
         var varCtx = new PathVariableContext
         {
-            From         = mimeFrom,
-            FromUpn      = atFrom > 0 ? mimeFrom[..atFrom] : mimeFrom,
-            FromDomain   = atFrom > 0 ? mimeFrom[(atFrom + 1)..] : "",
-            To           = matchedTo,
-            ToUpn        = atTo > 0 ? matchedTo[..atTo] : matchedTo,
-            ToDomain     = atTo > 0 ? matchedTo[(atTo + 1)..] : "",
-            ToBaseDomain = decision.ToBaseDomain,
-            Suffix       = "", // populated below if routed via suffix (not in decision yet)
-            Subject      = mime.Subject ?? "",
-            Date         = receivedAt.ToString("yyyy-MM-dd"),
-            DateTime     = receivedAt.ToString("yyyy-MM-dd_HHmmss")
+            From          = mimeFrom,
+            FromUpn       = atFrom > 0 ? mimeFrom[..atFrom] : mimeFrom,
+            FromDomain    = atFrom > 0 ? mimeFrom[(atFrom + 1)..] : "",
+            To            = matchedTo,
+            ToUpn         = atTo > 0 ? matchedTo[..atTo] : matchedTo,
+            ToDomain      = atTo > 0 ? matchedTo[(atTo + 1)..] : "",
+            ToBaseDomain  = decision.ToBaseDomain,
+            Suffix        = decision.CapturedSuffix,
+            Subject       = mime.Subject ?? "",
+            Date          = receivedAt.ToString("yyyy-MM-dd"),
+            DateTime      = receivedAt.ToString("yyyy-MM-dd_HHmmss"),
+            RegexCaptures = decision.RegexCaptures
         };
 
         var subjectDelim  = string.IsNullOrEmpty(decision.SubjectDelimiter)
