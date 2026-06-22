@@ -71,7 +71,7 @@ public class MainForm : Form
     // ── UI construction ──────────────────────────────────────────────────────
     private void InitializeComponent()
     {
-        Text = "365 Email Relay";
+        Text = "Osprey Relay for M365";
         Size = new Size(820, 580);
         MinimumSize = new Size(700, 480);
         StartPosition = FormStartPosition.CenterScreen;
@@ -107,15 +107,16 @@ public class MainForm : Form
         var pnlTools = new Panel
         {
             Dock = DockStyle.Top,
-            Height = 46,
+            AutoSize = true,
             BackColor = Color.FromArgb(245, 245, 248)
         };
         var flow = new FlowLayoutPanel
         {
-            Dock = DockStyle.Fill,
+            Dock = DockStyle.Top,
             Padding = new Padding(4, 6, 4, 6),
-            WrapContents = false,
-            AutoSize = false
+            WrapContents = true,
+            AutoSize = true,
+            AutoSizeMode = AutoSizeMode.GrowAndShrink,
         };
 
         _btnStartStop      = ToolBtn("Start Relay");
@@ -221,7 +222,7 @@ public class MainForm : Form
         _trayIcon = new NotifyIcon
         {
             Icon = SystemIcons.Application,
-            Text = "365 Email Relay",
+            Text = "Osprey Relay for M365",
             Visible = true
         };
         var trayMenu = new ContextMenuStrip();
@@ -243,7 +244,7 @@ public class MainForm : Form
             {
                 e.Cancel = true;
                 Hide();
-                _trayIcon.ShowBalloonTip(2000, "365 Relay",
+                _trayIcon.ShowBalloonTip(2000, "Osprey Relay for M365",
                     "Running in system tray", ToolTipIcon.Info);
             }
         };

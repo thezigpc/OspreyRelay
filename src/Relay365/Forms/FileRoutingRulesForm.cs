@@ -103,6 +103,7 @@ public class FileRoutingRulesForm : Form
             Text = "Save & Close",
             Size = new Size(120, 30),
             Location = new Point(800 - 260, 8),
+            Anchor = AnchorStyles.Bottom | AnchorStyles.Right,
             FlatStyle = FlatStyle.Flat,
             UseVisualStyleBackColor = true
         };
@@ -111,6 +112,7 @@ public class FileRoutingRulesForm : Form
             Text = "Cancel",
             Size = new Size(110, 30),
             Location = new Point(800 - 130, 8),
+            Anchor = AnchorStyles.Bottom | AnchorStyles.Right,
             FlatStyle = FlatStyle.Flat,
             UseVisualStyleBackColor = true
         };

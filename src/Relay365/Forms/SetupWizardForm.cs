@@ -469,7 +469,7 @@ public class SetupWizardForm : Form
 
         (_lblHeaderTitle.Text, _lblHeaderSub.Text) = page switch
         {
-            Page.Welcome       => ("Configure App", "Link 365 Relay to a Microsoft 365 app registration"),
+            Page.Welcome       => ("Configure App", "Connect Osprey Relay for M365 to your Microsoft 365 tenant"),
             Page.ManualCreds   => ("Azure Credentials", "Enter your app registration details"),
             Page.AdminSignIn   => ("Admin Sign-In", "Sign in to auto-create or update a registration"),
             Page.AppRegPicker  => ("App Registration", "Select an existing registration or create one"),
@@ -558,7 +558,7 @@ public class SetupWizardForm : Form
             }
 
             _lblPickerStatus.Text = apps.Count == 0
-                ? "No existing 365Relay registrations found. Create one below."
+                ? "No existing Osprey Relay registrations found. Create one below."
                 : $"{apps.Count} registration(s) found.";
 
             // Auto-select the registration that matches the saved config
@@ -594,7 +594,7 @@ public class SetupWizardForm : Form
         var name = Microsoft.VisualBasic.Interaction.InputBox(
             "Enter a display name for the new app registration:",
             "Create App Registration",
-            "365Relay");
+            "Osprey Relay");
 
         if (string.IsNullOrWhiteSpace(name)) return;
 
@@ -951,7 +951,7 @@ public class SetupWizardForm : Form
         MessageBox.Show(
             "To create the one-time Setup App in Azure AD:\n\n" +
             "1. Go to portal.azure.com → Azure Active Directory → App registrations → New registration\n" +
-            "2. Name it anything (e.g., '365Relay Setup')\n" +
+            "2. Name it anything (e.g., 'Osprey Relay Setup')\n" +
             "3. Supported account types: Accounts in this org only\n" +
             "4. Click Register\n" +
             "5. Go to Authentication → Add a platform → Mobile and desktop\n" +

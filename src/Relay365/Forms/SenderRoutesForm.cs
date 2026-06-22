@@ -124,9 +124,12 @@ public class SenderRoutesForm : Form
     {
         Text = text,
         Location = idx < 2
-            ? new Point(8 + idx * 126, 8)                     // left side
-            : new Point(640 - (5 - idx) * 126 - 16, 8),       // right side
+            ? new Point(8 + idx * 126, 8)
+            : new Point(640 - (5 - idx) * 126 - 16, 8),
         Size = new Size(118, 30),
+        Anchor = idx < 2
+            ? AnchorStyles.Bottom | AnchorStyles.Left
+            : AnchorStyles.Bottom | AnchorStyles.Right,
         FlatStyle = FlatStyle.Flat,
         FlatAppearance = { BorderColor = Color.FromArgb(200, 200, 210) },
         UseVisualStyleBackColor = true,

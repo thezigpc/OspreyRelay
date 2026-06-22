@@ -128,9 +128,9 @@ public class FileRuleEditorForm : Form
             Dock = DockStyle.Bottom, Height = 46,
             BackColor = Color.FromArgb(245, 245, 248)
         };
-        var btnSave   = new Button { Text = "Save",       Size = new Size(100, 30), Location = new Point(680 - 220, 8), FlatStyle = FlatStyle.Flat, UseVisualStyleBackColor = true };
-        var btnCancel = new Button { Text = "Cancel",     Size = new Size(100, 30), Location = new Point(680 - 112, 8), FlatStyle = FlatStyle.Flat, UseVisualStyleBackColor = true };
-        var btnVars   = new Button { Text = "Variables…", Size = new Size(100, 30), Location = new Point(10, 8),        FlatStyle = FlatStyle.Flat, UseVisualStyleBackColor = true };
+        var btnSave   = new Button { Text = "Save",       Size = new Size(100, 30), Location = new Point(680 - 220, 8), Anchor = AnchorStyles.Bottom | AnchorStyles.Right, FlatStyle = FlatStyle.Flat, UseVisualStyleBackColor = true };
+        var btnCancel = new Button { Text = "Cancel",     Size = new Size(100, 30), Location = new Point(680 - 112, 8), Anchor = AnchorStyles.Bottom | AnchorStyles.Right, FlatStyle = FlatStyle.Flat, UseVisualStyleBackColor = true };
+        var btnVars   = new Button { Text = "Variables…", Size = new Size(100, 30), Location = new Point(10, 8),        Anchor = AnchorStyles.Bottom | AnchorStyles.Left,  FlatStyle = FlatStyle.Flat, UseVisualStyleBackColor = true };
         btnSave.Click   += (_, _) => SaveRule();
         btnCancel.Click += (_, _) => { DialogResult = DialogResult.Cancel; Close(); };
         btnVars.Click   += (_, _) => new VariablesHelpForm().ShowDialog(this);

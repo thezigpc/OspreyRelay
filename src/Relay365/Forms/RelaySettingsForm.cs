@@ -57,6 +57,7 @@ public class RelaySettingsForm : Form
             Text = "Save",
             Size = new Size(100, 30),
             Location = new Point(560 - 220, 8),
+            Anchor = AnchorStyles.Bottom | AnchorStyles.Right,
             FlatStyle = FlatStyle.Flat,
             UseVisualStyleBackColor = true
         };
@@ -65,6 +66,7 @@ public class RelaySettingsForm : Form
             Text = "Cancel",
             Size = new Size(100, 30),
             Location = new Point(560 - 112, 8),
+            Anchor = AnchorStyles.Bottom | AnchorStyles.Right,
             FlatStyle = FlatStyle.Flat,
             UseVisualStyleBackColor = true
         };
