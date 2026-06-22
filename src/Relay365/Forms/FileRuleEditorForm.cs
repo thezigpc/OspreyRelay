@@ -211,6 +211,7 @@ public class FileRuleEditorForm : Form
         y += 30;
 
         // ── Relay destination ─────────────────────────────────────────────────
+        _destPanelY = y;
         _pnlRelayDest = new Panel { Location = new Point(lx, y), Width = w };
         {
             int ry = 0;
@@ -323,6 +324,7 @@ public class FileRuleEditorForm : Form
 
         // Store starting position for the override section so UpdateDestVisibility can reposition it
         _overrideSectionStartY = y; // the y after destination panels
+        _lastOverrideY = y; // initialize so RepositionOverrides computes correct delta on first call
 
         UpdateDestVisibility();
     }
@@ -679,7 +681,7 @@ public class FileRuleEditorForm : Form
                          : isSmarthost ? (_pnlSmarthostDest?.Height ?? 200)
                                        : (_pnlSpDest?.Height        ?? 280);
 
-        int newY = _overrideSectionStartY + activeHeight + 8;
+        int newY = _destPanelY + activeHeight + 8;
         RepositionOverrides(newY);
 
         // Grey out file-storage-only overrides when Email Relay or Smarthost is the destination.
@@ -698,24 +700,21 @@ public class FileRuleEditorForm : Form
 
     private void RepositionOverrides(int startY)
     {
-        // Find all controls that sit at or after the previous startY and shift them
-        // We identify them by being after the destination panels
-        // The separator before overrides has a known relative position:
-        // startY, startY+10 (bold label), +26, +28... We just look for controls
-        // positioned >= _overrideSectionStartY and shift them.
         int delta = startY - _lastOverrideY;
         if (delta == 0) return;
+        int prevY = _lastOverrideY;
         _lastOverrideY = startY;
 
         foreach (Control c in _scroll.Controls)
         {
             if (c == _pnlRelayDest || c == _pnlOneDriveDest || c == _pnlSpDest || c == _pnlSmarthostDest) continue;
-            if (c.Location.Y >= _overrideSectionStartY)
+            if (c.Location.Y >= prevY)
                 c.Location = new Point(c.Location.X, c.Location.Y + delta);
         }
     }
 
     private int _lastOverrideY;
+    private int _destPanelY;
 
     // ── Site search ───────────────────────────────────────────────────────────
 

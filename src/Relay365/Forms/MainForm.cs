@@ -75,7 +75,8 @@ public class MainForm : Form
         Size = new Size(780, 560);
         MinimumSize = new Size(760, 440);
         StartPosition = FormStartPosition.CenterScreen;
-        Icon = SystemIcons.Application;
+        var icoPath = Path.Combine(AppContext.BaseDirectory, "Resources", "app.ico");
+        if (File.Exists(icoPath)) Icon = new Icon(icoPath);
 
         // ── Status bar (top) ───────────────────────────────────────────────
         _pnlStatusBar = new Panel
