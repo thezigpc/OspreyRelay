@@ -72,8 +72,8 @@ public class MainForm : Form
     private void InitializeComponent()
     {
         Text = "Osprey Relay for M365";
-        Size = new Size(820, 580);
-        MinimumSize = new Size(700, 480);
+        Size = new Size(780, 560);
+        MinimumSize = new Size(760, 440);
         StartPosition = FormStartPosition.CenterScreen;
         Icon = SystemIcons.Application;
 
@@ -104,19 +104,26 @@ public class MainForm : Form
         _pnlStatusBar.Controls.AddRange(new Control[] { _lblRunState, _lblDetails });
 
         // ── Toolbar ────────────────────────────────────────────────────────
+        // Two fixed rows — row 1: primary controls, row 2: service/tools
         var pnlTools = new Panel
         {
             Dock = DockStyle.Top,
-            AutoSize = true,
+            Height = 82,
             BackColor = Color.FromArgb(245, 245, 248)
         };
-        var flow = new FlowLayoutPanel
+        var row1 = new FlowLayoutPanel
         {
-            Dock = DockStyle.Top,
-            Padding = new Padding(4, 6, 4, 6),
-            WrapContents = true,
-            AutoSize = true,
-            AutoSizeMode = AutoSizeMode.GrowAndShrink,
+            Location = new Point(4, 4),
+            Height = 36, Width = 760,
+            Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right,
+            WrapContents = false, AutoSize = false, Padding = new Padding(0)
+        };
+        var row2 = new FlowLayoutPanel
+        {
+            Location = new Point(4, 42),
+            Height = 36, Width = 760,
+            Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right,
+            WrapContents = false, AutoSize = false, Padding = new Padding(0)
         };
 
         _btnStartStop      = ToolBtn("Start Relay");
@@ -146,12 +153,16 @@ public class MainForm : Form
 
         UpdateDebugButton();
 
-        flow.Controls.AddRange(new Control[]
+        row1.Controls.AddRange(new Control[]
         {
-            _btnStartStop, _btnConfigure, _btnSettings, _btnRouting, _btnFileRules, _btnUnrouted,
+            _btnStartStop, _btnConfigure, _btnSettings, _btnRouting, _btnFileRules, _btnUnrouted
+        });
+        row2.Controls.AddRange(new Control[]
+        {
             _btnServiceInstall, _btnServiceStart, _btnOpenLog, _btnTestSend, _btnDebugMode
         });
-        pnlTools.Controls.Add(flow);
+        pnlTools.Controls.Add(row1);
+        pnlTools.Controls.Add(row2);
 
         // ── Log area ────────────────────────────────────────────────────────
         _rtbLog = new RichTextBox
