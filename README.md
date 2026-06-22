@@ -18,10 +18,12 @@ Osprey Relay for M365 runs locally as a Windows Service or desktop app, presents
 
 - **SMTP listener** on a configurable port (default 2525); supports optional SMTP AUTH
 - **Microsoft 365 delivery** via Microsoft Graph `sendMail` API
-- **Routing rules** — route by sender address, recipient address, or wildcard suffix domain
+- **Routing rules** — route by sender address, exact recipient address, or wildcard suffix domain
 - **OneDrive / SharePoint file storage** — save attachments directly to a drive path with rich `%variable%` filename templates
 - **Suffix domain routing** — catch all mail for `*.yourdomain.com` subdomains and route accordingly
-- **Smarthost failover** — if Graph is temporarily unreachable (503/504), failover to a configured SMTP smarthost (e.g. Barracuda, Mimecast) so nothing is lost
+- **Smarthost routing rule** — route specific senders or domains directly to an SMTP smarthost (intentional, not just failover); per-rule or global smarthost config
+- **Suffix strip / delivery override** — strip the suffix segment from the recipient address before delivery, or redirect to a completely different address; optional To: header rewrite for smarthost routes
+- **Smarthost failover** — if Graph is temporarily unreachable (503/504), automatically failover to a configured SMTP smarthost so nothing is lost
 - **Windows Service mode** — runs unattended via the Windows Service Control Manager
 - **Setup Wizard** — guided Azure AD app registration with admin consent flow, or manual credential entry
 - **Relay Settings** — port, max message size, bind address, fallback sender, SMTP auth, and smarthost all in one place
@@ -44,26 +46,34 @@ Osprey Relay for M365 runs locally as a Windows Service or desktop app, presents
 
 ### 1. Build / install
 
-Clone the repo and publish a self-contained build:
+Download the latest `Relay365.exe` from the [Releases](https://github.com/thezigpc/OspreyRelay365/releases) page — it is self-contained and requires no .NET install.
+
+To build from source:
 
 ```powershell
-.\publish.ps1
+dotnet publish src/Relay365/Relay365.csproj /p:PublishProfile=win-x64
 ```
 
-The output lands in `publish\win-x64\`. Run `Relay365.exe` directly, or install as a Windows Service.
+The output lands in `src\Relay365\publish\`. Run `Relay365.exe` directly, or install as a Windows Service.
 
 ### 2. Configure — App Registration
 
 On first run, click **Configure App**. The wizard will either:
 
-- **Walk you through** signing in as a Global Admin and automatically creating an Azure AD app registration with the correct `Mail.Send` permission, or
+- **Walk you through** signing in as a Global Admin and automatically creating an Azure AD app registration with the correct permissions, or
 - Accept **manual credentials** (Tenant ID, Client ID, Client Secret) if you've already registered the app yourself.
 
-The required Graph permission is:
+The required Graph **application permissions** (not Delegated) depend on which features you use:
 
-```
-Mail.Send   (Application — not Delegated)
-```
+| Permission | Required when |
+|---|---|
+| `Mail.Send` | Always — email relay via Exchange Online |
+| `Files.ReadWrite.All` | File routing rules targeting **OneDrive** |
+| `Sites.ReadWrite.All` | File routing rules targeting **SharePoint** |
+
+All permissions require **admin consent** in your Azure AD tenant.
+
+> **Scoping SharePoint access:** `Sites.ReadWrite.All` grants the registered app read/write access to every site collection in your tenant. To restrict delivery to specific sites only, use the `Sites.Selected` permission instead and grant per-site access via the SharePoint Admin Centre or PowerShell (`Grant-PnPAzureADAppSitePermission`). Support for managing site access through **security groups** directly within Osprey Relay is planned for a future release.
 
 ### 3. Configure — Relay Settings
 
