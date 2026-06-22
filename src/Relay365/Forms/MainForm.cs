@@ -233,7 +233,7 @@ public class MainForm : Form
         // ── System tray ─────────────────────────────────────────────────────
         _trayIcon = new NotifyIcon
         {
-            Icon = SystemIcons.Application,
+            Icon = File.Exists(icoPath) ? new Icon(icoPath, 16, 16) : SystemIcons.Application,
             Text = "Osprey Relay for M365",
             Visible = true
         };

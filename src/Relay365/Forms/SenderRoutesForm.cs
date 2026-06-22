@@ -35,8 +35,7 @@ public class SenderRoutesForm : Form
         // Description
         var lblDesc = new Label
         {
-            Dock = DockStyle.Top,
-            Height = 56,
+            Dock = DockStyle.Fill,
             Padding = new Padding(10, 8, 10, 0),
             Font = new Font("Segoe UI", 9),
             ForeColor = Color.FromArgb(60, 60, 80),
@@ -48,9 +47,7 @@ public class SenderRoutesForm : Form
         // Grid
         _grid = new DataGridView
         {
-            Location = new Point(0, 56),
-            Size = new Size(ClientSize.Width, ClientSize.Height - 56 - 46),
-            Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right | AnchorStyles.Bottom,
+            Dock = DockStyle.Fill,
             AllowUserToAddRows = true,
             AllowUserToDeleteRows = false,
             AutoSizeColumnsMode = DataGridViewAutoSizeColumnsMode.Fill,
@@ -84,17 +81,14 @@ public class SenderRoutesForm : Form
         _grid.AlternatingRowsDefaultCellStyle.BackColor = Color.FromArgb(250, 250, 255);
 
         // Bottom buttons
-        var pnlButtons = new Panel
-        {
-            Dock = DockStyle.Bottom,
-            Height = 46,
-            BackColor = Color.FromArgb(245, 245, 248)
-        };
-
-        _btnAdd = Btn("+ Add Row", 0);
-        _btnRemove = Btn("− Remove Row", 1);
-        _btnSave = Btn("Save", 3);
-        _btnCancel = Btn("Cancel", 4);
+        _btnAdd    = Btn("+ Add Row");
+        _btnRemove = Btn("− Remove Row");
+        _btnSave   = Btn("Save");
+        _btnCancel = Btn("Cancel");
+        _btnAdd.Dock    = DockStyle.Left;
+        _btnRemove.Dock = DockStyle.Left;
+        _btnSave.Dock   = DockStyle.Right;
+        _btnCancel.Dock = DockStyle.Right;
 
         _btnAdd.Click += (_, _) =>
         {
@@ -113,25 +107,42 @@ public class SenderRoutesForm : Form
         _btnSave.Click += (_, _) => SaveAndClose();
         _btnCancel.Click += (_, _) => { DialogResult = DialogResult.Cancel; Close(); };
 
-        pnlButtons.Controls.AddRange(
-            new Control[] { _btnAdd, _btnRemove, _btnSave, _btnCancel });
+        var pnlButtons = new Panel
+        {
+            Dock = DockStyle.Fill,
+            BackColor = Color.FromArgb(245, 245, 248)
+        };
+        pnlButtons.Controls.Add(_btnSave);   // DockRight: first = left of right pair
+        pnlButtons.Controls.Add(_btnCancel); // DockRight: second = rightmost
+        pnlButtons.Controls.Add(_btnRemove); // DockLeft: third = 2nd from left
+        pnlButtons.Controls.Add(_btnAdd);    // DockLeft: fourth = leftmost
 
-        // Layout (add in reverse-dock order)
-        Controls.Add(_grid);
-        Controls.Add(lblDesc);
-        Controls.Add(pnlButtons);
+        var tlp = new TableLayoutPanel
+        {
+            Dock = DockStyle.Fill,
+            RowCount = 3,
+            ColumnCount = 1,
+            Padding = new Padding(0),
+            Margin = new Padding(0),
+            CellBorderStyle = TableLayoutPanelCellBorderStyle.None
+        };
+        tlp.RowStyles.Clear();
+        tlp.ColumnStyles.Clear();
+        tlp.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100f));
+        tlp.RowStyles.Add(new RowStyle(SizeType.Absolute, 56f));
+        tlp.RowStyles.Add(new RowStyle(SizeType.Percent, 100f));
+        tlp.RowStyles.Add(new RowStyle(SizeType.Absolute, 46f));
+        tlp.Controls.Add(lblDesc, 0, 0);
+        tlp.Controls.Add(_grid, 0, 1);
+        tlp.Controls.Add(pnlButtons, 0, 2);
+
+        Controls.Add(tlp);
     }
 
-    private static Button Btn(string text, int idx) => new Button
+    private static Button Btn(string text) => new Button
     {
         Text = text,
-        Location = idx < 2
-            ? new Point(8 + idx * 126, 8)
-            : new Point(640 - (5 - idx) * 126 - 16, 8),
         Size = new Size(118, 30),
-        Anchor = idx < 2
-            ? AnchorStyles.Bottom | AnchorStyles.Left
-            : AnchorStyles.Bottom | AnchorStyles.Right,
         FlatStyle = FlatStyle.Flat,
         FlatAppearance = { BorderColor = Color.FromArgb(200, 200, 210) },
         UseVisualStyleBackColor = true,

@@ -85,30 +85,18 @@ public class FileRoutingRulesForm : Form
         StartPosition = FormStartPosition.CenterParent;
         MaximizeBox = false;
 
-        _tabs = new TabControl
-        {
-            Location = new Point(0, 0),
-            Size = new Size(ClientSize.Width, ClientSize.Height - 46),
-            Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right | AnchorStyles.Bottom
-        };
+        _tabs = new TabControl { Dock = DockStyle.Fill };
 
         _tabs.TabPages.Add(BuildSuffixTab());
         _tabs.TabPages.Add(BuildRecipientTab());
         _tabs.TabPages.Add(BuildDefaultsTab());
         _tabs.TabPages.Add(BuildUnroutedTab());
 
-        var pnlBottom = new Panel
-        {
-            Dock = DockStyle.Bottom,
-            Height = 46,
-            BackColor = Color.FromArgb(245, 245, 248)
-        };
         var btnSave = new Button
         {
             Text = "Save & Close",
             Size = new Size(120, 30),
-            Location = new Point(800 - 260, 8),
-            Anchor = AnchorStyles.Bottom | AnchorStyles.Right,
+            Dock = DockStyle.Right,
             FlatStyle = FlatStyle.Flat,
             UseVisualStyleBackColor = true
         };
@@ -116,17 +104,39 @@ public class FileRoutingRulesForm : Form
         {
             Text = "Cancel",
             Size = new Size(110, 30),
-            Location = new Point(800 - 130, 8),
-            Anchor = AnchorStyles.Bottom | AnchorStyles.Right,
+            Dock = DockStyle.Right,
             FlatStyle = FlatStyle.Flat,
             UseVisualStyleBackColor = true
         };
         btnSave.Click += (_, _) => SaveAll();
         btnCancel.Click += (_, _) => { DialogResult = DialogResult.Cancel; Close(); };
-        pnlBottom.Controls.AddRange(new Control[] { btnSave, btnCancel });
 
-        Controls.Add(_tabs);
-        Controls.Add(pnlBottom);
+        var pnlBottom = new Panel
+        {
+            Dock = DockStyle.Fill,
+            BackColor = Color.FromArgb(245, 245, 248)
+        };
+        pnlBottom.Controls.Add(btnSave);   // DockRight: added first = left of pair
+        pnlBottom.Controls.Add(btnCancel); // DockRight: added second = rightmost
+
+        var tlp = new TableLayoutPanel
+        {
+            Dock = DockStyle.Fill,
+            RowCount = 2,
+            ColumnCount = 1,
+            Padding = new Padding(0),
+            Margin = new Padding(0),
+            CellBorderStyle = TableLayoutPanelCellBorderStyle.None
+        };
+        tlp.RowStyles.Clear();
+        tlp.ColumnStyles.Clear();
+        tlp.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100f));
+        tlp.RowStyles.Add(new RowStyle(SizeType.Percent, 100f));
+        tlp.RowStyles.Add(new RowStyle(SizeType.Absolute, 46f));
+        tlp.Controls.Add(_tabs, 0, 0);
+        tlp.Controls.Add(pnlBottom, 0, 1);
+
+        Controls.Add(tlp);
     }
 
     // ── Suffix rules tab ──────────────────────────────────────────────────────

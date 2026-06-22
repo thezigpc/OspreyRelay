@@ -140,22 +140,37 @@ public class FileRuleEditorForm : Form
         _scroll = new Panel { Dock = DockStyle.Fill, AutoScroll = true };
 
         // ── Bottom nav ────────────────────────────────────────────────────────
-        var pnlNav = new Panel
-        {
-            Dock = DockStyle.Bottom, Height = 46,
-            BackColor = Color.FromArgb(245, 245, 248)
-        };
-        var btnSave   = new Button { Text = "Save",       Size = new Size(100, 30), Location = new Point(680 - 220, 8), Anchor = AnchorStyles.Bottom | AnchorStyles.Right, FlatStyle = FlatStyle.Flat, UseVisualStyleBackColor = true };
-        var btnCancel = new Button { Text = "Cancel",     Size = new Size(100, 30), Location = new Point(680 - 112, 8), Anchor = AnchorStyles.Bottom | AnchorStyles.Right, FlatStyle = FlatStyle.Flat, UseVisualStyleBackColor = true };
-        var btnVars   = new Button { Text = "Variables…", Size = new Size(100, 30), Location = new Point(10, 8),        Anchor = AnchorStyles.Bottom | AnchorStyles.Left,  FlatStyle = FlatStyle.Flat, UseVisualStyleBackColor = true };
+        var btnSave   = new Button { Text = "Save",       Size = new Size(100, 30), Dock = DockStyle.Right, FlatStyle = FlatStyle.Flat, UseVisualStyleBackColor = true };
+        var btnCancel = new Button { Text = "Cancel",     Size = new Size(100, 30), Dock = DockStyle.Right, FlatStyle = FlatStyle.Flat, UseVisualStyleBackColor = true };
+        var btnVars   = new Button { Text = "Variables…", Size = new Size(100, 30), Dock = DockStyle.Left,  FlatStyle = FlatStyle.Flat, UseVisualStyleBackColor = true };
         btnSave.Click   += (_, _) => SaveRule();
         btnCancel.Click += (_, _) => { DialogResult = DialogResult.Cancel; Close(); };
         btnVars.Click   += (_, _) => new VariablesHelpForm().ShowDialog(this);
-        pnlNav.Controls.AddRange(new Control[] { btnSave, btnCancel, btnVars });
+        var pnlNav = new Panel { Dock = DockStyle.Fill, BackColor = Color.FromArgb(245, 245, 248) };
+        // Right-docked controls are added in reverse visual order (last added = rightmost)
+        pnlNav.Controls.Add(btnSave);
+        pnlNav.Controls.Add(btnCancel);
+        pnlNav.Controls.Add(btnVars);
 
-        Controls.Add(_scroll);
+        var tlp = new TableLayoutPanel
+        {
+            Dock = DockStyle.Fill,
+            RowCount = 2,
+            ColumnCount = 1,
+            Padding = new Padding(0),
+            Margin = new Padding(0),
+            CellBorderStyle = TableLayoutPanelCellBorderStyle.None
+        };
+        tlp.RowStyles.Clear();
+        tlp.ColumnStyles.Clear();
+        tlp.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100f));
+        tlp.RowStyles.Add(new RowStyle(SizeType.Percent, 100f));
+        tlp.RowStyles.Add(new RowStyle(SizeType.Absolute, 46f));
+        tlp.Controls.Add(_scroll, 0, 0);
+        tlp.Controls.Add(pnlNav, 0, 1);
+
+        Controls.Add(tlp);
         Controls.Add(pnlType);
-        Controls.Add(pnlNav);
 
         BuildScrollContent();
     }
