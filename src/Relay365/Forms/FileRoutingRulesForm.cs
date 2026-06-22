@@ -85,7 +85,12 @@ public class FileRoutingRulesForm : Form
         StartPosition = FormStartPosition.CenterParent;
         MaximizeBox = false;
 
-        _tabs = new TabControl { Dock = DockStyle.Fill };
+        _tabs = new TabControl
+        {
+            Location = new Point(0, 0),
+            Size = new Size(ClientSize.Width, ClientSize.Height - 46),
+            Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right | AnchorStyles.Bottom
+        };
 
         _tabs.TabPages.Add(BuildSuffixTab());
         _tabs.TabPages.Add(BuildRecipientTab());

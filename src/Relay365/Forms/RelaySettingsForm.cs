@@ -74,7 +74,12 @@ public class RelaySettingsForm : Form
         btnCancel.Click += (_, _) => { DialogResult = DialogResult.Cancel; Close(); };
         pnlBottom.Controls.AddRange(new Control[] { btnSave, btnCancel });
 
-        var tabs = new TabControl { Dock = DockStyle.Fill };
+        var tabs = new TabControl
+        {
+            Location = new Point(0, 0),
+            Size = new Size(ClientSize.Width, ClientSize.Height - pnlBottom.Height),
+            Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right | AnchorStyles.Bottom
+        };
         tabs.TabPages.Add(BuildSmtpTab());
         tabs.TabPages.Add(BuildSmarthostTab());
 

@@ -48,7 +48,9 @@ public class SenderRoutesForm : Form
         // Grid
         _grid = new DataGridView
         {
-            Dock = DockStyle.Fill,
+            Location = new Point(0, 56),
+            Size = new Size(ClientSize.Width, ClientSize.Height - 56 - 46),
+            Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right | AnchorStyles.Bottom,
             AllowUserToAddRows = true,
             AllowUserToDeleteRows = false,
             AutoSizeColumnsMode = DataGridViewAutoSizeColumnsMode.Fill,
