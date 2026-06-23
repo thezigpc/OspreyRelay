@@ -265,23 +265,19 @@ public class FileRoutingRulesForm : Form
         };
         btnBrowse.Click += (_, _) =>
         {
-            try
+            var initial = string.IsNullOrWhiteSpace(_txtUnroutedLocalPath.Text)
+                ? Core.Config.ConfigManager.GetConfigDir()
+                : _txtUnroutedLocalPath.Text;
+            // UseDescriptionForTitle forces the modern Vista-style (IFileOpenDialog) picker
+            // which is stable; the old SHBrowseForFolder dialog crashes on some Win11 configs.
+            using var dlg = new FolderBrowserDialog
             {
-                using var dlg = new FolderBrowserDialog
-                {
-                    Description  = "Select unrouted email folder",
-                    SelectedPath = string.IsNullOrWhiteSpace(_txtUnroutedLocalPath.Text)
-                        ? Core.Config.ConfigManager.GetConfigDir()
-                        : _txtUnroutedLocalPath.Text
-                };
-                if (dlg.ShowDialog(this) == DialogResult.OK)
-                    _txtUnroutedLocalPath.Text = dlg.SelectedPath;
-            }
-            catch (Exception ex)
-            {
-                MessageBox.Show($"Could not open folder browser: {ex.Message}", "Error",
-                    MessageBoxButtons.OK, MessageBoxIcon.Error);
-            }
+                Description          = "Select unrouted email folder",
+                UseDescriptionForTitle = true,
+                SelectedPath         = Directory.Exists(initial) ? initial : ""
+            };
+            if (dlg.ShowDialog(this) == DialogResult.OK)
+                _txtUnroutedLocalPath.Text = dlg.SelectedPath;
         };
         scroll.Controls.AddRange(new Control[] { _txtUnroutedLocalPath, btnBrowse });
         y += 32;
