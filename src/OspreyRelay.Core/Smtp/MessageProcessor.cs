@@ -222,7 +222,7 @@ public class MessageProcessor
     {
         try
         {
-            var dir = GetUnroutedDir(_configManager.Config.UnroutedLocalPath);
+            var dir = _configManager.GetUnroutedDir(_configManager.Config.UnroutedLocalPath);
             Directory.CreateDirectory(dir);
 
             var stamp = email.ReceivedAt.ToString("yyyyMMdd_HHmmss_fff");
@@ -380,13 +380,4 @@ public class MessageProcessor
         resp.EnsureSuccessStatusCode();
     }
 
-    /// <summary>
-    /// Returns the local unrouted folder path.
-    /// Pass <paramref name="configuredPath"/> from <see cref="RelayConfig.UnroutedLocalPath"/>
-    /// to respect the user's custom override; blank falls back to the default location.
-    /// </summary>
-    public static string GetUnroutedDir(string? configuredPath = null) =>
-        !string.IsNullOrWhiteSpace(configuredPath)
-            ? configuredPath
-            : Path.Combine(ConfigManager.GetConfigDir(), "unrouted");
 }

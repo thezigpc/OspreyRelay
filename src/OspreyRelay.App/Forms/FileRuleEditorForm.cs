@@ -113,6 +113,7 @@ public class FileRuleEditorForm : Form
 
         InitializeComponent();
         PopulateFromEdit();
+        ApplyServiceFlags();
     }
 
     private MatchMode CurrentMode => _cboMatchMode.SelectedIndex switch
@@ -964,6 +965,25 @@ public class FileRuleEditorForm : Form
             if ("match".Equals(c.Tag?.ToString())) continue;
             if (c.Location.Y >= prevY)
                 c.Location = new Point(c.Location.X, c.Location.Y + delta);
+        }
+    }
+
+    // ── Service flag enforcement ──────────────────────────────────────────────
+
+    private void ApplyServiceFlags()
+    {
+        var cfg = _configManager.Config;
+        _rdoTypeRelay.Enabled      = cfg.EnableEmailRelay;
+        _rdoTypeOneDrive.Enabled   = cfg.EnableOneDrive;
+        _rdoTypeSharePoint.Enabled = cfg.EnableSharePoint;
+        // Smarthost is always available
+
+        // If the currently-selected radio is now disabled, pick the first enabled one
+        var radios = new[] { _rdoTypeRelay, _rdoTypeOneDrive, _rdoTypeSharePoint, _rdoTypeSmarthost };
+        if (radios.FirstOrDefault(r => r.Checked)?.Enabled == false)
+        {
+            var first = radios.FirstOrDefault(r => r.Enabled);
+            if (first != null) first.Checked = true;
         }
     }
 

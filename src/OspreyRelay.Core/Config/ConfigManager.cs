@@ -6,17 +6,29 @@ namespace OspreyRelay.Core.Config;
 
 public class ConfigManager
 {
-    private static readonly string ConfigDir = Path.Combine(
-        Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData),
-        "OspreyRelay365");
+    private readonly string _configDir;
+    private readonly string _configPath;
 
-    private static readonly string ConfigPath = Path.Combine(ConfigDir, "config.json");
+    public ConfigManager(string productFolderName = "OspreyRelay365")
+    {
+        _configDir  = Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData),
+            productFolderName);
+        _configPath = Path.Combine(_configDir, "config.json");
+    }
 
     private static readonly JsonSerializerOptions JsonOptions = new()
     {
         WriteIndented = true,
         PropertyNameCaseInsensitive = true
     };
+
+    public string GetConfigDir() => _configDir;
+    public string GetLogPath()   => Path.Combine(_configDir, "relay.log");
+    public string GetUnroutedDir(string? configuredPath = null) =>
+        !string.IsNullOrWhiteSpace(configuredPath)
+            ? configuredPath
+            : Path.Combine(_configDir, "unrouted");
 
     public RelayConfig Config { get; private set; } = new();
 
@@ -30,13 +42,13 @@ public class ConfigManager
     {
         MigrationPerformed = false;
 
-        if (!File.Exists(ConfigPath))
+        if (!File.Exists(_configPath))
         {
             Config = new RelayConfig();
             return;
         }
 
-        var json = File.ReadAllText(ConfigPath);
+        var json = File.ReadAllText(_configPath);
         Config = JsonSerializer.Deserialize<RelayConfig>(json, JsonOptions) ?? new RelayConfig();
 
         // Decrypt secrets
@@ -81,7 +93,7 @@ public class ConfigManager
 
     public void Save(RelayConfig config)
     {
-        Directory.CreateDirectory(ConfigDir);
+        Directory.CreateDirectory(_configDir);
         Config = config;
 
         if (!string.IsNullOrEmpty(config.ClientSecret))
@@ -109,11 +121,8 @@ public class ConfigManager
         config.FileRules = new();
 
         var json = JsonSerializer.Serialize(config, JsonOptions);
-        File.WriteAllText(ConfigPath, json);
+        File.WriteAllText(_configPath, json);
     }
-
-    public static string GetLogPath() => Path.Combine(ConfigDir, "relay.log");
-    public static string GetConfigDir() => ConfigDir;
 
     // ── Migration ─────────────────────────────────────────────────────────────
 

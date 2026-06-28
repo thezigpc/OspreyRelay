@@ -3,19 +3,16 @@ using System.ServiceProcess;
 using OspreyRelay.Core.Config;
 using OspreyRelay.Core.Logging;
 using OspreyRelay.Core.Smtp;
-using OspreyRelay.App.Relay;
-using OspreyRelay.App.Services;
+using OspreyRelay.WorkspaceApp.Relay;
+using OspreyRelay.WorkspaceApp.Services;
 
-namespace OspreyRelay.App.Forms;
+namespace OspreyRelay.WorkspaceApp.Forms;
 
 public class MainForm : Form
 {
     // ── Core ────────────────────────────────────────────────────────────────
-    private readonly ConfigManager _configManager = new();
-    // GUI-side logger (wizard, SP resolution, test send).
-    // In in-process mode this also drives the relay; in service mode it is in-memory only.
+    private readonly ConfigManager _configManager = new("OspreyRelayWorkspace");
     private RelayLogger _logger = null!;
-    // The active relay connection — swap implementation here to change relay mode.
     private IRelayConnection _connection = null!;
 
     // ── Controls ────────────────────────────────────────────────────────────
@@ -44,16 +41,12 @@ public class MainForm : Form
 
         bool svcInstalled = WindowsServiceManager.IsInstalled();
 
-        // In service mode the service owns relay.log; GUI logger is in-memory only to
-        // avoid cross-process file contention.
         _logger = new RelayLogger(svcInstalled ? null : _configManager.GetLogPath())
         {
             DebugMode = _configManager.Config.DebugMode
         };
         _logger.LogReceived += OnLogReceived;
 
-        // Choose connection implementation based on whether the service is installed.
-        // To upgrade to named pipe: replace ServiceRelayConnection with NamedPipeRelayConnection.
         _connection = svcInstalled
             ? (IRelayConnection)new ServiceRelayConnection(_configManager.GetLogPath())
             : new InProcessRelayConnection(_configManager, _logger);
@@ -64,29 +57,25 @@ public class MainForm : Form
         RefreshServiceButtons();
         UpdateStatusBar();
 
-        // Auto-start only in in-process mode; service mode leaves control to the user / SCM
-        if (!svcInstalled && _configManager.Config.IsConfigured)
+        if (!svcInstalled && _configManager.Config.IsWorkspaceConfigured)
             StartRelay();
     }
 
     // ── UI construction ──────────────────────────────────────────────────────
     private void InitializeComponent()
     {
-        Text = "Osprey Relay for M365";
+        Text = "Osprey Relay for Workspace";
         Size = new Size(780, 560);
         MinimumSize = new Size(760, 440);
         StartPosition = FormStartPosition.CenterScreen;
-        // Load the icon embedded in the exe via <ApplicationIcon> in the csproj.
-        // This works in all publish types (SCD, FDD) without requiring a separate Resources file.
         var exeIcon = Icon.ExtractAssociatedIcon(Application.ExecutablePath);
         if (exeIcon != null) Icon = exeIcon;
 
-        // ── Status bar (top) ───────────────────────────────────────────────
         _pnlStatusBar = new Panel
         {
             Dock = DockStyle.Top,
             Height = 64,
-            BackColor = Color.FromArgb(30, 30, 60),
+            BackColor = Color.FromArgb(20, 50, 30),
             Padding = new Padding(12, 0, 12, 0)
         };
         _lblRunState = new Label
@@ -100,15 +89,13 @@ public class MainForm : Form
         _lblDetails = new Label
         {
             Font = new Font("Segoe UI", 9),
-            ForeColor = Color.FromArgb(180, 180, 200),
-            Text = "Not configured — click Configure App, then Settings",
+            ForeColor = Color.FromArgb(180, 200, 180),
+            Text = "Not configured — click Configure to upload your service account key",
             AutoSize = true,
             Location = new Point(14, 40)
         };
         _pnlStatusBar.Controls.AddRange(new Control[] { _lblRunState, _lblDetails });
 
-        // ── Toolbar ────────────────────────────────────────────────────────
-        // Two fixed rows — row 1: primary controls, row 2: service/tools
         var pnlTools = new Panel
         {
             Dock = DockStyle.Top,
@@ -131,7 +118,7 @@ public class MainForm : Form
         };
 
         _btnStartStop      = ToolBtn("Start Relay");
-        _btnConfigure      = ToolBtn("Configure App");
+        _btnConfigure      = ToolBtn("Configure…");
         _btnSettings       = ToolBtn("Settings…");
         _btnRouting        = ToolBtn("Email Routes…");
         _btnFileRules      = ToolBtn("Rules…");
@@ -170,7 +157,6 @@ public class MainForm : Form
         pnlTools.Controls.Add(row1);
         pnlTools.Controls.Add(row2);
 
-        // ── Log area ────────────────────────────────────────────────────────
         _rtbLog = new RichTextBox
         {
             Dock = DockStyle.Fill,
@@ -194,7 +180,6 @@ public class MainForm : Form
         pnlLog.Controls.Add(_rtbLog);
         pnlLog.Controls.Add(lblLogTitle);
 
-        // ── Config path strip (bottom) ──────────────────────────────────────
         var pnlConfigPath = new Panel
         {
             Dock = DockStyle.Bottom,
@@ -229,17 +214,15 @@ public class MainForm : Form
         pnlConfigPath.Controls.AddRange(
             new Control[] { lblConfigPath, lnkOpenConfig, lblBackupTip });
 
-        // ── Compose layout (add in reverse dock order) ──────────────────────
         Controls.Add(pnlLog);
         Controls.Add(pnlTools);
         Controls.Add(_pnlStatusBar);
         Controls.Add(pnlConfigPath);
 
-        // ── System tray ─────────────────────────────────────────────────────
         _trayIcon = new NotifyIcon
         {
             Icon = exeIcon != null ? new Icon(exeIcon, 16, 16) : SystemIcons.Application,
-            Text = "Osprey Relay for M365",
+            Text = "Osprey Relay for Workspace",
             Visible = true
         };
         var trayMenu = new ContextMenuStrip();
@@ -250,7 +233,6 @@ public class MainForm : Form
         _trayIcon.ContextMenuStrip = trayMenu;
         _trayIcon.DoubleClick += (_, _) => { Show(); WindowState = FormWindowState.Normal; Activate(); };
 
-        // ── Service status refresh ───────────────────────────────────────────
         _statusTimer = new System.Windows.Forms.Timer { Interval = 5000 };
         _statusTimer.Tick += (_, _) => { RefreshServiceButtons(); UpdateStatusBar(); };
         _statusTimer.Start();
@@ -261,7 +243,7 @@ public class MainForm : Form
             {
                 e.Cancel = true;
                 Hide();
-                _trayIcon.ShowBalloonTip(2000, "Osprey Relay for M365",
+                _trayIcon.ShowBalloonTip(2000, "Osprey Relay for Workspace",
                     "Running in system tray", ToolTipIcon.Info);
             }
         };
@@ -284,9 +266,9 @@ public class MainForm : Form
     {
         if (_connection.IsRunning) return;
 
-        if (_connection is InProcessRelayConnection && !_configManager.Config.IsConfigured)
+        if (_connection is InProcessRelayConnection && !_configManager.Config.IsWorkspaceConfigured)
         {
-            _logger.Warning("Relay not started — configuration incomplete. Use Configure…");
+            _logger.Warning("Relay not started — workspace credentials not configured. Use Configure…");
             return;
         }
 
@@ -321,12 +303,12 @@ public class MainForm : Form
     private void OpenWizard()
     {
         StopRelay();
-        using var wizard = new SetupWizardForm(_configManager, _logger);
+        using var wizard = new WorkspaceSetupForm(_configManager, _logger);
         if (wizard.ShowDialog(this) == DialogResult.OK)
         {
             _configManager.Load();
             UpdateStatusBar();
-            if (_configManager.Config.IsConfigured)
+            if (_configManager.Config.IsWorkspaceConfigured)
                 StartRelay();
         }
     }
@@ -352,7 +334,6 @@ public class MainForm : Form
         using var form = new FileRoutingRulesForm(_configManager, _logger);
         if (form.ShowDialog(this) == DialogResult.OK && _connection.IsRunning)
         {
-            // Routing config changed — restart so RoutingEngine picks up new rules
             StopRelay();
             _configManager.Load();
             StartRelay();
@@ -390,10 +371,7 @@ public class MainForm : Form
         _logger.DebugMode = cfg.DebugMode;
         _configManager.Save(cfg);
         UpdateDebugButton();
-        _logger.Info($"Debug mode {(cfg.DebugMode ? "enabled" : "disabled")} — " +
-                     (cfg.DebugMode ? "verbose output will appear in log and relay-debug.log" : "verbose output suppressed"));
-        if (_connection is ServiceRelayConnection)
-            _logger.Info("(Debug mode change takes effect after service restart)");
+        _logger.Info($"Debug mode {(cfg.DebugMode ? "enabled" : "disabled")}");
     }
 
     private void UpdateDebugButton()
@@ -422,18 +400,13 @@ public class MainForm : Form
                 WindowsServiceManager.Uninstall();
 
                 if (wasAdmin)
-                {
-                    // Service is now gone — restart so the GUI switches to in-process mode
                     Application.Restart();
-                }
                 else
-                {
-                    // Elevation was triggered asynchronously; user must restart manually
                     MessageBox.Show(
                         "Uninstall launched elevated. Please restart the management GUI when complete.",
                         "Service Uninstall", MessageBoxButtons.OK, MessageBoxIcon.Information);
-                    RefreshServiceButtons();
-                }
+
+                RefreshServiceButtons();
             }
             else
             {
@@ -448,9 +421,8 @@ public class MainForm : Form
                 }
                 else
                 {
-                    // Elevation triggered asynchronously
                     MessageBox.Show(
-                        "Install launched elevated. Please restart the management GUI when complete to switch to service mode.",
+                        "Install launched elevated. Please restart the management GUI when complete.",
                         "Service Install", MessageBoxButtons.OK, MessageBoxIcon.Information);
                     RefreshServiceButtons();
                 }
@@ -465,7 +437,6 @@ public class MainForm : Form
 
     private void ToggleServiceRunning()
     {
-        // Only reachable in in-process mode (_btnServiceStart is hidden in service mode)
         try
         {
             var status = WindowsServiceManager.GetStatus();
@@ -494,9 +465,9 @@ public class MainForm : Form
     {
         if (InvokeRequired) { Invoke(UpdateStatusBar); return; }
 
-        var running  = _connection.IsRunning;
-        var svcMode  = _connection is ServiceRelayConnection;
-        var cfg      = _configManager.Config;
+        var running = _connection.IsRunning;
+        var svcMode = _connection is ServiceRelayConnection;
+        var cfg     = _configManager.Config;
 
         _lblRunState.Text = running ? "RUNNING" : "STOPPED";
         _lblRunState.ForeColor = running
@@ -507,19 +478,17 @@ public class MainForm : Form
             ? (svcMode ? "Stop Service" : "Stop Relay")
             : (svcMode ? "Start Service" : "Start Relay");
 
-        // Disable Start in in-process mode until credentials are configured
-        _btnStartStop.Enabled = svcMode || cfg.IsConfigured;
+        _btnStartStop.Enabled = svcMode || cfg.IsWorkspaceConfigured;
 
         var ftpTag = cfg.FtpEnabled ? $"  ·  FTP:{cfg.FtpPort}" : "";
         _lblDetails.Text = running
             ? $"SMTP:{cfg.RelayPort}{ftpTag}  ·  Max {cfg.MaxMessageSizeMb} MB  ·  " +
-              $"Fallback: {(string.IsNullOrWhiteSpace(cfg.FallbackSenderEmail) ? "passthrough only" : cfg.FallbackSenderEmail)}  ·  " +
-              $"Tenant: {cfg.TenantId}" +
+              $"Impersonating: {cfg.ImpersonationEmail}" +
               (svcMode ? "  ·  [Windows Service]" : "")
-            : cfg.IsConfigured
-                ? $"Configured  ·  SMTP:{cfg.RelayPort}{ftpTag}  ·  Tenant: {cfg.TenantId}" +
+            : cfg.IsWorkspaceConfigured
+                ? $"Configured  ·  SMTP:{cfg.RelayPort}{ftpTag}  ·  Impersonating: {cfg.ImpersonationEmail}" +
                   (svcMode ? "  ·  [Windows Service]" : "")
-                : "Not configured — click Configure App, then Settings";
+                : "Not configured — click Configure to upload your service account key";
     }
 
     private void RefreshServiceButtons()
@@ -531,7 +500,6 @@ public class MainForm : Form
 
         _btnServiceInstall.Text = installed ? "Uninstall Service" : "Install Service";
 
-        // In service mode _btnStartStop handles start/stop — hide the redundant button
         _btnServiceStart.Visible = !svcMode;
         _btnServiceStart.Enabled = installed && !svcMode;
         if (!svcMode)

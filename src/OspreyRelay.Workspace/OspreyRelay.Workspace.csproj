@@ -1,0 +1,20 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0-windows</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <AllowUnsafeBlocks>false</AllowUnsafeBlocks>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Google.Apis.Auth" Version="1.69.0" />
+    <PackageReference Include="Google.Apis.Gmail.v1" Version="1.69.0.3742" />
+    <PackageReference Include="Google.Apis.Drive.v3" Version="1.69.0.3674" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\OspreyRelay.Core\OspreyRelay.Core.csproj" />
+  </ItemGroup>
+
+</Project>

@@ -18,7 +18,7 @@ public enum NoMatchBehavior
 }
 
 // ── File storage options ──────────────────────────────────────────────────────
-public enum FileDestinationType { EmailRelay, OneDrive, SharePoint, SmarthostRelay }
+public enum FileDestinationType { EmailRelay, OneDrive, SharePoint, SmarthostRelay, GoogleDrive }
 
 /// <summary>
 /// Resolved smarthost connection parameters passed through RouteDecision so MessageProcessor

@@ -1,9 +1,9 @@
-using System.Net.Mail;
+﻿using System.Net.Mail;
 using System.Text.Json;
 using OspreyRelay.Core.Config;
 using OspreyRelay.Core.Logging;
 
-namespace OspreyRelay.App.Forms;
+namespace OspreyRelay.WorkspaceApp.Forms;
 
 /// <summary>
 /// Sends a test email through the local SMTP relay so you can verify routing,

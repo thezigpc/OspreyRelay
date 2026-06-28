@@ -1,6 +1,6 @@
-using OspreyRelay.Core.Config;
+﻿using OspreyRelay.Core.Config;
 
-namespace OspreyRelay.App.Forms;
+namespace OspreyRelay.WorkspaceApp.Forms;
 
 /// <summary>
 /// Operational settings form — relay endpoint, email options, SMTP auth, and smarthost failover.
@@ -21,9 +21,8 @@ public class RelaySettingsForm : Form
     private TextBox _txtSmtpPass = null!;
 
     // Services tab
-    private CheckBox _chkEnableEmailRelay = null!;
-    private CheckBox _chkEnableOneDrive   = null!;
-    private CheckBox _chkEnableSharePoint = null!;
+    private CheckBox _chkEnableGmailRelay  = null!;
+    private CheckBox _chkEnableGoogleDrive = null!;
 
     // Smarthost tab
     private CheckBox _chkSmarthostEnabled = null!;
@@ -259,7 +258,7 @@ public class RelaySettingsForm : Form
 
         scroll.Controls.Add(new Label
         {
-            Text = "Choose which Microsoft 365 services this relay will use. Disabling a service greys out " +
+            Text = "Choose which Google Workspace services this relay will use. Disabling a service greys out " +
                    "its destination options in the rule editor and routing forms.\n\n" +
                    "Smarthost delivery is always available regardless of which services are enabled.",
             Location = new Point(12, y), AutoSize = false, Width = 500, Height = 54,
@@ -267,30 +266,21 @@ public class RelaySettingsForm : Form
         });
         y += 62;
 
-        Section(scroll, "Microsoft 365 Services", ref y);
+        Section(scroll, "Google Workspace Services", ref y);
 
-        _chkEnableEmailRelay = Check(scroll, "Exchange Online email relay  (Mail.Send / Mail.ReadWrite permissions)", ref y);
+        _chkEnableGmailRelay = Check(scroll, "Gmail email relay  (gmail.send scope)", ref y);
         scroll.Controls.Add(new Label
         {
-            Text = "Send and relay email via Exchange Online mailboxes.",
+            Text = "Send and relay email via Gmail API using domain-wide delegation.",
             Location = new Point(30, y - 4), AutoSize = false, Width = 490, Height = 18,
             ForeColor = Color.DimGray, Font = new Font("Segoe UI", 8.5f)
         });
         y += 16;
 
-        _chkEnableOneDrive = Check(scroll, "OneDrive for Business file storage  (Files.ReadWrite.All permission)", ref y);
+        _chkEnableGoogleDrive = Check(scroll, "Google Drive file storage  (drive scope)", ref y);
         scroll.Controls.Add(new Label
         {
-            Text = "Route email attachments to individual users' OneDrive. Available in all M365 plans.",
-            Location = new Point(30, y - 4), AutoSize = false, Width = 490, Height = 18,
-            ForeColor = Color.DimGray, Font = new Font("Segoe UI", 8.5f)
-        });
-        y += 16;
-
-        _chkEnableSharePoint = Check(scroll, "SharePoint file storage  (Sites.ReadWrite.All permission)", ref y);
-        scroll.Controls.Add(new Label
-        {
-            Text = "Route to SharePoint document libraries. Requires M365 Business Standard or higher.",
+            Text = "Route email attachments to Google Drive — My Drive or a Shared Drive.",
             Location = new Point(30, y - 4), AutoSize = false, Width = 490, Height = 18,
             ForeColor = Color.DimGray, Font = new Font("Segoe UI", 8.5f)
         });
@@ -298,8 +288,8 @@ public class RelaySettingsForm : Form
 
         scroll.Controls.Add(new Label
         {
-            Text = "Note: After changing services, re-open the rule editor and routing forms to see the updated options.\n" +
-                   "Existing rules pointing to a disabled destination are preserved but cannot be selected for new rules.",
+            Text = "Note: The service account key's granted DWD scopes must match the services enabled here.\n" +
+                   "After changing services, re-open the rule editor and routing forms to see the updated options.",
             Location = new Point(12, y), AutoSize = false, Width = 510, Height = 36,
             ForeColor = Color.DarkGoldenrod, Font = new Font("Segoe UI", 8.5f)
         });
@@ -332,9 +322,8 @@ public class RelaySettingsForm : Form
         _rdoSmarthostOriginalFrom.Checked  = cfg.SmarthostUseOriginalFrom;
         _rdoSmarthostFallbackFrom.Checked  = !cfg.SmarthostUseOriginalFrom;
 
-        _chkEnableEmailRelay.Checked = cfg.EnableEmailRelay;
-        _chkEnableOneDrive.Checked   = cfg.EnableOneDrive;
-        _chkEnableSharePoint.Checked = cfg.EnableSharePoint;
+        _chkEnableGmailRelay.Checked  = cfg.EnableGmailRelay;
+        _chkEnableGoogleDrive.Checked = cfg.EnableGoogleDrive;
 
         UpdateSmtpAuthFields();
         UpdateSmarthostFields();
@@ -361,9 +350,8 @@ public class RelaySettingsForm : Form
         cfg.SmarthostPassword       = _txtSmarthostPass.Text;
         cfg.SmarthostUseOriginalFrom = _rdoSmarthostOriginalFrom.Checked;
 
-        cfg.EnableEmailRelay  = _chkEnableEmailRelay.Checked;
-        cfg.EnableOneDrive    = _chkEnableOneDrive.Checked;
-        cfg.EnableSharePoint  = _chkEnableSharePoint.Checked;
+        cfg.EnableGmailRelay  = _chkEnableGmailRelay.Checked;
+        cfg.EnableGoogleDrive = _chkEnableGoogleDrive.Checked;
 
         _configManager.Save(cfg);
         DialogResult = DialogResult.OK;

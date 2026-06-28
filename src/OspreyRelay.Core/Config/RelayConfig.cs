@@ -90,6 +90,25 @@ public class RelayConfig
     public List<FtpUserConfig> FtpUsers { get; set; } = new();
     public List<FtpRoutingRule> FtpRules { get; set; } = new();
 
+    // ── Google Workspace auth ─────────────────────────────────────────────────
+    public string ServiceAccountKeyPath { get; set; } = "";
+    public string ImpersonationEmail { get; set; } = "";
+
+    [JsonIgnore]
+    public bool IsWorkspaceConfigured =>
+        !string.IsNullOrWhiteSpace(ServiceAccountKeyPath) &&
+        !string.IsNullOrWhiteSpace(ImpersonationEmail) &&
+        File.Exists(ServiceAccountKeyPath);
+
+    // ── Enabled services ─────────────────────────────────────────────────────
+    // M365 product — all default true so existing installs are unaffected
+    public bool EnableEmailRelay  { get; set; } = true;
+    public bool EnableOneDrive    { get; set; } = true;
+    public bool EnableSharePoint  { get; set; } = true;
+    // Workspace product
+    public bool EnableGmailRelay  { get; set; } = true;
+    public bool EnableGoogleDrive { get; set; } = true;
+
     // ── Diagnostics ───────────────────────────────────────────────────────────
     /// <summary>When true, verbose debug entries are written to relay-debug.log and shown in the UI.</summary>
     public bool DebugMode { get; set; } = false;
